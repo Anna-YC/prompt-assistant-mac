@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>提示词预览</title>
+  <link rel="stylesheet" href="panel.css" />
+  <link rel="stylesheet" href="preview.css" />
+</head>
+<body>
+  <article class="preview">
+    <header class="preview-header"><h1 id="previewTitle"></h1><button id="previewClose" class="ibtn" aria-label="关闭预览" title="关闭预览（Esc）"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></header>
+    <div class="preview-model"><span class="model-label">适用模型</span><span id="previewModel"></span></div>
+    <div id="previewMedia" class="preview-media hidden">
+      <img id="previewImage" class="hidden" alt="效果预览" />
+      <video id="previewVideo" class="hidden" controls playsinline></video>
+      <span id="mediaMessage" role="status"></span>
+      <button id="playVideo" class="hidden" aria-label="播放视频">▶ <span>播放视频</span></button>
+    </div>
+    <div class="preview-caption"><span>提示词全文</span><span id="copyCount"></span></div>
+    <div id="previewText" tabindex="0"></div>
+    <div id="previewTags" class="preview-tags"></div>
+    <footer class="preview-actions">
+      <button id="previewCopy" class="copy-primary"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></svg><span>复制提示词</span></button>
+      <button id="previewLink" class="action-icon" aria-label="打开来源链接" title="打开来源链接"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M21 3 10 14M11 4H4v17h17v-8"/></svg></button>
+      <button id="previewPin" class="action-icon" aria-label="收藏" title="收藏到常用词"><svg viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4Z"/></svg></button>
+    </footer>
+  </article>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="preview.js"></script>
+</body>
+</html>

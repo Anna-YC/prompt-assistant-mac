@@ -25,12 +25,19 @@ function tagColor(name) {
 async function loadAll() {
   const d = await window.api.getData();
   cfg = d.config; view = d.view; meta = d.meta;
-  tables = (await window.api.listTables().catch(() => [])) || [];
   renderAll();
+  // Local preferences must remain usable while the remote table list loads.
+  if (!cfg.baseToken) return;
+  const baseToken = cfg.baseToken;
+  window.api.listTables().then((result) => {
+    if (cfg.baseToken !== baseToken) return;
+    tables = result || [];
+    $$('#srcList select[data-k="tableId"]').forEach((el) => { el.innerHTML = tableOptions(el.value); });
+  }).catch(() => {});
 }
 
 function renderAll() {
-  document.body.dataset.theme = cfg.appearance.theme === 'dark' ? 'dark' : 'light';
+  applySettingsAppearance();
   renderSource();
   renderPrompts();
   renderPhrases();
@@ -69,11 +76,13 @@ function renderSource() {
         <label>类型</label>
         <select data-k="kind"><option value="prompt" ${src.kind !== 'phrase' ? 'selected' : ''}>提示词</option><option value="phrase" ${src.kind === 'phrase' ? 'selected' : ''}>常用句</option></select>
         <label>标题字段</label><select data-k="title" data-map="1"></select>
-        <label>正文字段</label><select data-k="content" data-map="1"></select>
+        <label>正文字段</label><select data-k="content" data-map="1" title="直接读取剪藏时保存的内容"></select>
         <label>标签字段</label><div class="tagpicks" data-k="tags"></div>
         <label>预览图字段</label><select data-k="image" data-map="1"></select>
         <label>备注字段</label><select data-k="note" data-map="1"></select>
         <label>视频字段</label><select data-k="video" data-map="1"></select>
+        <label>添加时间</label><select data-k="createdAt" data-map="1" title="用于最新排序，留空时自动识别添加时间或创建时间列"></select>
+        <label>适用模型</label><select data-k="model" data-map="1" title="预览时展示模型，留空时自动识别使用模型列"></select>
       </div>
       <label class="ck" style="margin-top:10px"><input type="checkbox" data-k="downloadImages" ${src.downloadImages ? 'checked' : ''} /> 同步时下载预览图到本地</label>
     `;
@@ -107,10 +116,16 @@ async function fillFieldSelects(card, idx) {
     fs.map((f) => `<option value="${esc(f.name)}" ${f.name === v ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
   const m = src.mapping || {};
   card.querySelector('[data-k="title"]').innerHTML = opt(m.title);
-  card.querySelector('[data-k="content"]').innerHTML = opt(m.content);
+  const contentSelect = card.querySelector('[data-k="content"]');
+  const rawContent = fs.some(f => f.name === '内容');
+  contentSelect.innerHTML = rawContent ? '<option value="内容">内容</option>' :
+    '<option value="">自动识别</option>' + fs.filter(f => !f.name.includes('可直接复制提示词')).map(f => `<option value="${esc(f.name)}" ${f.name === m.content ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+  contentSelect.disabled = rawContent;
   card.querySelector('[data-k="image"]').innerHTML = opt(m.image);
   card.querySelector('[data-k="note"]').innerHTML = opt(m.note);
   card.querySelector('[data-k="video"]').innerHTML = opt(m.video);
+  card.querySelector('[data-k="createdAt"]').innerHTML = '<option value="">自动识别</option>' + opt(m.createdAt, false);
+  card.querySelector('[data-k="model"]').innerHTML = '<option value="">自动识别</option>' + opt(m.model, false);
   const tags = Array.isArray(m.tags) ? m.tags : m.tags ? [m.tags] : [];
   card.querySelector('[data-k="tags"]').innerHTML = fs
     .filter((f) => f.type === 'select' || f.type === 'text')
@@ -364,10 +379,18 @@ function openDlg(kind, item) {
 function closeDlg() { $('#dlg').classList.add('hidden'); editing = null; }
 
 // ---------------- 外观 ----------------
+function applySettingsAppearance() {
+  document.body.dataset.theme = cfg.appearance.theme === 'dark' ? 'dark' : 'light';
+  document.body.style.setProperty('--accent', cfg.appearance.accent || '#ed7059');
+  const opacity = cfg.appearance.handleOpacity;
+  document.body.style.setProperty('--handle-opacity', String(Number.isFinite(opacity) ? Math.max(.1, Math.min(1, opacity)) : .8));
+}
 function renderLook() {
   const a = cfg.appearance, p = cfg.panel, b = cfg.behavior;
   $('#theme').value = a.theme;
-  $('#accent').value = a.accent || '#4f7cff';
+  $('#accent').value = a.accent || '#ed7059';
+  const opacity = Math.round((Number.isFinite(a.handleOpacity) ? Math.max(.1, Math.min(1, a.handleOpacity)) : .8) * 100);
+  $('#handleOpacity').value = opacity; $('#handleOpacityVal').textContent = opacity + '%';
   $('#edge').value = p.edge;
   $('#width').value = p.width; $('#widthVal').textContent = p.width + ' px';
   $('#previewLines').value = String(a.previewLines || 2);
@@ -442,16 +465,36 @@ function bind() {
   });
 
   // 外观
-  const look = (patch) => window.api.setConfig(patch);
-  $('#theme').addEventListener('change', (e) => look({ appearance: { ...cfg.appearance, theme: e.target.value } }));
-  $('#accent').addEventListener('input', (e) => look({ appearance: { ...cfg.appearance, accent: e.target.value } }));
-  $('#edge').addEventListener('change', (e) => look({ panel: { ...cfg.panel, edge: e.target.value } }));
-  $('#width').addEventListener('input', (e) => { $('#widthVal').textContent = e.target.value + ' px'; look({ panel: { ...cfg.panel, width: +e.target.value } }); });
-  $('#previewLines').addEventListener('change', (e) => look({ appearance: { ...cfg.appearance, previewLines: +e.target.value } }));
-  $('#collapseMs').addEventListener('input', (e) => { $('#collapseVal').textContent = e.target.value + ' ms'; look({ panel: { ...cfg.panel, autoCollapseMs: +e.target.value } }); });
-  $('#cardImage').addEventListener('change', (e) => look({ appearance: { ...cfg.appearance, cardImage: e.target.checked } }));
-  $('#copyToast').addEventListener('change', (e) => look({ behavior: { ...cfg.behavior, copyToast: e.target.checked } }));
-  $('#mediaPersist').addEventListener('change', (e) => look({ behavior: { ...cfg.behavior, mediaPersist: e.target.checked } }));
+  let lookRevision = 0;
+  const look = async (patch) => {
+    const revision = ++lookRevision;
+    // Send only changed fields so consecutive controls never overwrite each other.
+    for (const [key, value] of Object.entries(patch)) cfg[key] = { ...cfg[key], ...value };
+    applySettingsAppearance();
+    $('#lookSaveState').textContent = '正在保存…';
+    try {
+      const saved = await window.api.setConfig(patch);
+      if (revision !== lookRevision) return;
+      cfg = saved;
+      applySettingsAppearance();
+      $('#lookSaveState').textContent = '已自动保存';
+    } catch {
+      if (revision === lookRevision) $('#lookSaveState').textContent = '保存失败，请重新调整后重试';
+    }
+  };
+  $('#handleOpacity').addEventListener('input', (e) => {
+    $('#handleOpacityVal').textContent = e.target.value + '%';
+    look({ appearance: { handleOpacity: +e.target.value / 100 } });
+  });
+  $('#theme').addEventListener('change', (e) => look({ appearance: { theme: e.target.value } }));
+  $('#accent').addEventListener('input', (e) => look({ appearance: { accent: e.target.value } }));
+  $('#edge').addEventListener('change', (e) => look({ panel: { edge: e.target.value } }));
+  $('#width').addEventListener('input', (e) => { $('#widthVal').textContent = e.target.value + ' px'; look({ panel: { width: +e.target.value } }); });
+  $('#previewLines').addEventListener('change', (e) => look({ appearance: { previewLines: +e.target.value } }));
+  $('#collapseMs').addEventListener('input', (e) => { $('#collapseVal').textContent = e.target.value + ' ms'; look({ panel: { autoCollapseMs: +e.target.value } }); });
+  $('#cardImage').addEventListener('change', (e) => look({ appearance: { cardImage: e.target.checked } }));
+  $('#copyToast').addEventListener('change', (e) => look({ behavior: { copyToast: e.target.checked } }));
+  $('#mediaPersist').addEventListener('change', (e) => look({ behavior: { mediaPersist: e.target.checked } }));
   $('#btnPickDir').addEventListener('click', async () => {
     const d = await window.api.pickDir();
     if (!d) return;
@@ -495,7 +538,7 @@ function bind() {
   $$('.promo-card').forEach((c) => c.addEventListener('click', () => window.api.openExternal(c.dataset.url)));
   $('#btnEnvClose').addEventListener('click', () => $('#envDlg').classList.add('hidden'));
   $('#btnEnvRe').addEventListener('click', () => runEnvCheck());
-  $('#launchAtLogin').addEventListener('change', (e) => look({ behavior: { ...cfg.behavior, launchAtLogin: e.target.checked } }));
+  $('#launchAtLogin').addEventListener('change', (e) => look({ behavior: { launchAtLogin: e.target.checked } }));
 
   window.api.on('data:updated', (p) => { view = p.view; meta = p.meta; renderPrompts(); renderPhrases(); renderSyncInfo(); });
   window.api.on('env:setupProgress', (p) => setEnvMsg(p.msg || ''));

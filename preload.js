@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('api', {
   setPanelState: (st) => ipcRenderer.invoke('panel:state', st),
   requestExpand: (sticky) => ipcRenderer.invoke('panel:requestExpand', sticky),
   requestCollapse: () => ipcRenderer.invoke('panel:requestCollapse'),
+  collapseComplete: (sequence) => ipcRenderer.invoke('panel:collapseComplete', sequence),
+  autoCollapse: () => ipcRenderer.invoke('panel:autoCollapse'),
+  showPreview: (req) => ipcRenderer.invoke('preview:show', req),
+  hidePreview: () => ipcRenderer.invoke('preview:hide'),
   getPanelState: () => ipcRenderer.invoke('panel:getstate'),
   setHandlePos: (p) => ipcRenderer.invoke('panel:setHandlePos', p),
   setDragging: (on) => ipcRenderer.invoke('panel:dragging', on),
@@ -40,7 +44,7 @@ contextBridge.exposeInMainWorld('api', {
   // 事件
   on: (channel, fn) => {
     // 前缀白名单：避免漏登记单个通道导致消息被丢（曾因此出现把手缺块）
-    const ok = ['data:', 'sync:', 'panel:', 'stats:', 'appearance:', 'env:'].some((p) => channel.startsWith(p));
+    const ok = ['data:', 'sync:', 'panel:', 'preview:', 'stats:', 'appearance:', 'env:'].some((p) => channel.startsWith(p));
     if (ok) ipcRenderer.on(channel, (_e, payload) => fn(payload));
   },
 });

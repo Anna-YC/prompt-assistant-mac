@@ -14,3 +14,20 @@ desktop.ini
 
 # 本地调试脚本
 /tmp-*.js
+
+# 本地界面验证截图与隔离测试数据
+/output/
+
+# 本地账号配置与凭据
+/.env
+/.env.*
+!/.env.example
+!/.env.sample
+/config.json
+/cache.json
+/stats.json
+/credentials.json
+/auth.json
+*.pem
+*.p12
+*.pfx

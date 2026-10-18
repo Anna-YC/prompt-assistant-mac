@@ -7,13 +7,13 @@
 </head>
 <body>
   <aside class="side">
-    <div class="logo"><span class="dot"></span>提示词助手</div>
+    <div class="logo"><span class="dot">”</span><div>提示词助手<small>偏好设置</small></div></div>
     <nav>
-      <button class="nav on" data-tab="source">数据源</button>
-      <button class="nav" data-tab="prompt">提示词</button>
-      <button class="nav" data-tab="phrase">常用句</button>
-      <button class="nav" data-tab="look">外观与行为</button>
-      <button class="nav" data-tab="guide">配置与使用</button>
+      <button class="nav on" data-tab="source"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg>数据源</button>
+      <button class="nav" data-tab="prompt"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>提示词</button>
+      <button class="nav" data-tab="phrase"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z M7 9h10M7 13h6"/></svg>常用句</button>
+      <button class="nav" data-tab="look"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg>外观与行为</button>
+      <button class="nav" data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 5M12 17h.01"/></svg>配置与使用</button>
     </nav>
     <div class="sidefoot" id="syncInfo"></div>
   </aside>
@@ -23,6 +23,7 @@
     <section id="tab-source" class="tab on">
       <h2>飞书多维表数据源</h2>
       <p class="hint">数据通过本机已登录的 lark-cli 读取（零配置）；修改多维表后点「立即同步」即可更新。</p>
+      <p class="hint">正文直接读取表格的「内容」列，可在浏览器剪藏时完成删改；预览同时展示表格中填写的使用模型。</p>
       <div class="row"><label>多维表链接</label><input id="baseUrl" class="wide" placeholder="https://xxx.feishu.cn/base/..." /><button id="btnParse" class="btn">解析</button></div>
       <p class="warnline">多维表链接请参考「配置与使用」中的剪藏多维表配置后使用</p>
       <div class="row"><label>lark-cli 路径</label><input id="larkCliPath" class="mid" /><label class="mini">身份</label>
@@ -72,18 +73,39 @@
     <!-- 外观 -->
     <section id="tab-look" class="tab">
       <h2>外观与行为</h2>
-      <div class="row"><label>主题</label><select id="theme"><option value="light">浅色</option><option value="dark">深色</option></select></div>
-      <div class="row"><label>主题色</label><input id="accent" type="color" /></div>
-      <div class="row"><label>吸附边</label><select id="edge"><option value="right">屏幕右侧</option><option value="top">屏幕顶部</option></select></div>
-      <div class="row"><label>面板宽度</label><input id="width" type="range" min="320" max="560" step="8" /><span id="widthVal" class="val"></span></div>
-      <div class="row"><label>预览行数</label><select id="previewLines"><option value="1">1 行</option><option value="2">2 行</option><option value="3">3 行</option></select></div>
-      <div class="row"><label>收回延时</label><input id="collapseMs" type="range" min="200" max="1500" step="50" /><span id="collapseVal" class="val"></span></div>
+      <p class="hint section-intro">让入口更轻巧，让创作更顺手。<span id="lookSaveState" role="status">更改会自动保存</span></p>
+      <div class="settings-card handle-settings">
+        <div class="handle-controls">
+          <h3>悬浮入口</h3>
+          <p class="hint">只调整屏幕边缘的引号按钮，展开的面板与预览保持不透明。</p>
+          <div class="row opacity-row"><label for="handleOpacity">不透明度</label><output id="handleOpacityVal" for="handleOpacity" class="val">80%</output></div>
+          <input id="handleOpacity" type="range" min="10" max="100" step="5" value="80" aria-describedby="opacityHelp" />
+          <div class="range-captions" id="opacityHelp"><span>轻透 · 10%</span><span>实色 · 100%</span></div>
+        </div>
+        <div class="handle-demo" aria-hidden="true"><div class="demo-window"><i></i><i></i><i></i></div><svg class="demo-tab" viewBox="0 0 36 76"><path fill="#17191a" d="M36 0H32V4Q32 8 28 8H5Q1 8 1 12V64Q1 68 5 68H28Q32 68 32 72V76H36Z"/><rect x="29" y="12" width="2.5" height="52" rx="1.25" fill="var(--accent)"/><path fill="#fff" transform="translate(6 28) scale(.75)" d="M3 5h8v8c0 4-2.5 6.5-7 7v-3.5c2.4-.4 3.5-1.5 3.5-3.5H3V5Zm11 0h8v8c0 4-2.5 6.5-7 7v-3.5c2.4-.4 3.5-1.5 3.5-3.5H14V5Z"/></svg><span>实时预览</span></div>
+      </div>
+      <div class="settings-card">
+      <h3>界面显示</h3>
+      <div class="row"><label for="theme">主题</label><select id="theme"><option value="light">浅色</option><option value="dark">深色</option></select></div>
+      <div class="row"><label for="accent">主题色</label><input id="accent" type="color" /></div>
+      <div class="row"><label for="width">面板宽度</label><input id="width" type="range" min="320" max="560" step="8" /><span id="widthVal" class="val"></span></div>
+      <div class="row"><label for="previewLines">预览行数</label><select id="previewLines"><option value="1">1 行</option><option value="2">2 行</option><option value="3">3 行</option></select></div>
       <div class="row"><label class="ck"><input id="cardImage" type="checkbox" /> 卡片显示效果预览图</label></div>
+      </div>
+      <div class="settings-card">
+      <h3>展开与收回</h3>
+      <div class="row"><label for="edge">吸附边</label><select id="edge"><option value="right">屏幕右侧</option><option value="top">屏幕顶部</option></select></div>
+      <div class="row"><label for="collapseMs">收回响应延时</label><input id="collapseMs" type="range" min="0" max="60" step="10" /><span id="collapseVal" class="val"></span></div>
+      <p class="hint">移入立即展开；移出后等待 0–60 ms 开始收回。过渡动画约 120–160 ms，鼠标移回可立即反向展开。</p>
       <div class="row"><label class="ck"><input id="copyToast" type="checkbox" /> 复制后显示提示</label></div>
+      </div>
+      <div class="settings-card">
+      <h3>存储与启动</h3>
       <div class="row"><label class="ck"><input id="mediaPersist" type="checkbox" /> 预览图/视频缓存到磁盘（关闭=无痕：临时目录存放，退出自动清空）</label></div>
       <div class="row"><label>缓存位置</label><input id="mediaDir" class="mid" placeholder="默认：安装目录\cache\media" /><button id="btnPickDir" class="btn">更改…</button><button id="btnClearCache" class="btn sm">清空缓存</button><span id="cacheMsg" class="msg"></span></div>
       <p class="hint">预览图与视频下载存放的目录，可改到任意盘（如 D:\缓存）。留空时 Windows 用安装目录下的 cache\media，mac 用应用缓存目录。</p>
       <div class="row"><label class="ck"><input id="launchAtLogin" type="checkbox" /> 开机自动启动</label></div>
+      </div>
     </section>
 
     <!-- 配置与使用 -->
@@ -192,7 +214,7 @@
 
       <h3>五、日常怎么用</h3>
       <ul>
-        <li><b>打开面板</b>：鼠标移到屏幕右缘的悬浮把手 → 面板滑出；移开约半秒后自动收回，不打扰工作。
+        <li><b>打开面板</b>：鼠标移到屏幕边缘的引号按钮 → 面板滑出；移开后立即开始收回，不打扰工作。按钮不透明度可在「外观与行为」调整。
         左键托盘图标 = 固定展开 / 收起面板；</li>
         <li><b>快速复制</b>：右键托盘图标 = 常用提示词菜单，点击即复制全文；</li>
         <li><b>浏览筛选</b>：两级分类——大类（常用词 / 生图词 / 视频词 / 高频）→ 细分（人物 / 环境 / …），顶部可搜索；</li>

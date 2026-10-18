@@ -9,11 +9,14 @@ const { Readable } = require('stream');
 const { pathToFileURL } = require('url');
 const { Store } = require('./lib/store');
 const feishu = require('./lib/feishu');
+const { createPreviewController, contains } = require('./lib/preview-window');
+const { panelCloseDelay } = require('./lib/config');
 
 let store;
 let tray = null;
 let panelWin = null;
 let settingsWin = null;
+let quickPreview = null;
 let syncTimer = null;
 let syncing = false;
 let panelExpanded = false;
@@ -61,11 +64,12 @@ function log(...a) {
 function panelBounds() {
   const cfg = store.config.panel;
   const wa = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(wa.width, Math.max(320, Number(cfg.width) || 384));
   if (cfg.edge === 'top') {
-    const w = Math.min(cfg.width + 140, wa.width);
+    const w = Math.min(width + 140, wa.width);
     return { x: wa.x + Math.round((wa.width - w) / 2), y: wa.y, width: w, height: Math.round(wa.height * 0.86) };
   }
-  return { x: wa.x + wa.width - cfg.width, y: wa.y, width: cfg.width, height: wa.height };
+  return { x: wa.x + wa.width - width, y: wa.y, width, height: wa.height };
 }
 
 let panelEdgeCreated = null;
@@ -89,6 +93,7 @@ function createPanel() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   });
   panelWin.setAlwaysOnTop(true, 'screen-saver'); // 高于普通置顶窗口
@@ -98,7 +103,7 @@ function createPanel() {
   // 收起态窗口缩为把手大小（真实接收鼠标事件）；展开/拖动态为面板全尺寸
   panelWin.once('ready-to-show', () => {
     panelWin.showInactive();
-    setWinMode(panelExpanded ? 'expanded' : 'collapsed');
+    setWinMode(panelExpanded ? 'expanded' : 'collapsed', true);
     setTimeout(() => {
       try {
         const pt = screen.getCursorScreenPoint();
@@ -121,7 +126,6 @@ let handleDragging = false;
 let dragFrac = null;
 function setWinMode(m, force) {
   if (panelMode === m && !force) return;
-  log('setWinMode', m, force ? '(forced)' : '');
   panelMode = m;
   if (!panelWin || panelWin.isDestroyed()) return;
   panelWin.setBounds(m === 'collapsed' ? handleRect() : panelBounds());
@@ -135,11 +139,14 @@ function setPanelInteractive(_on) { /* 不再需要 */ }
 
 function repositionPanel() {
   if (!panelWin || panelWin.isDestroyed()) return;
-  setWinMode(panelMode === 'expanded' || panelMode === 'dragging' ? panelMode : 'collapsed');
-  sendPanel('panel:layout', { edge: store.config.panel.edge });
+  quickPreview?.hide();
+  setWinMode(panelMode === 'expanded' || panelMode === 'dragging' ? panelMode : 'collapsed', true);
+  sendPanel('panel:layout', { edge: store.config.panel.edge, ...panelBounds() });
 }
 
 function recreatePanelWindow() {
+  clearTimeout(collapseTimer); collapseTimer = null; panelMotionSequence++;
+  quickPreview?.hide();
   panelExpanded = false;
   panelSticky = false;
   handleDragging = false;
@@ -149,27 +156,36 @@ function recreatePanelWindow() {
 }
 
 let collapseTimer = null;
+let panelMotionSequence = 0;
 function expandPanel(sticky) {
   if (!panelWin || panelWin.isDestroyed()) createPanel();
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
   panelSticky = !!sticky;
   panelExpanded = true;
+  panelMotionSequence++;
   setWinMode('expanded');
-  sendPanel('panel:expand', { sticky: panelSticky });
+  sendPanel('panel:expand', { sticky: panelSticky, layout: panelBounds() });
   if (panelWin) panelWin.showInactive();
 }
 
-function collapsePanel() {
+function finishPanelCollapse(sequence) {
+  if (sequence !== panelMotionSequence || panelExpanded || handleDragging) return;
+  clearTimeout(collapseTimer); collapseTimer = null;
+  setWinMode('collapsed');
+  sendPanel('panel:handle-on');
+}
+
+function collapsePanel(automatic = false) {
+  if (!panelExpanded && panelMode !== 'expanded') return;
+  quickPreview?.hide();
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
   panelSticky = false;
   panelExpanded = false;
-  sendPanel('panel:collapse', {}); // 渲染进程开始滑出（.22s）
-  collapseTimer = setTimeout(() => {
-    collapseTimer = null;
-    if (panelExpanded || handleDragging) return;
-    setWinMode('collapsed'); // 滑出完成后缩窗
-    sendPanel('panel:handle-on');
-  }, 240);
+  const sequence = ++panelMotionSequence;
+  sendPanel('panel:collapse', { sequence, automatic });
+  // Renderer acknowledges the actual last animation frame. Fallback only
+  // handles a suspended/crashed renderer; stale acks cannot shrink a reopened UI.
+  collapseTimer = setTimeout(() => finishPanelCollapse(sequence), 200);
 }
 
 function togglePanel() {
@@ -184,10 +200,34 @@ function handleRect() {
   if (cfg.edge === 'top') {
     const f = typeof pos.top === 'number' ? pos.top : 0.5;
     const b = panelBounds();
-    return { x: b.x + Math.round(b.width * f) - 42, y: wa.y, width: 84, height: 24 };
+    const x = Math.max(wa.x, Math.min(wa.x + wa.width - 76, b.x + Math.round(b.width * f) - 38));
+    return { x, y: wa.y, width: 76, height: 36 };
   }
   const f = typeof pos.right === 'number' ? pos.right : 0.5;
-  return { x: wa.x + wa.width - 24, y: wa.y + Math.round(wa.height * f) - 42, width: 24, height: 84 };
+  const y = Math.max(wa.y, Math.min(wa.y + wa.height - 76, wa.y + Math.round(wa.height * f) - 38));
+  return { x: wa.x + wa.width - 36, y, width: 36, height: 76 };
+}
+
+function autoCollapsePanel() {
+  if (!panelExpanded || panelSticky || handleDragging) return false;
+  if (quickPreview?.isOpen() && quickPreview.pointerInside()) return false;
+  if (panelWin && !panelWin.isDestroyed() && contains(panelWin.getBounds(), screen.getCursorScreenPoint())) return false;
+  collapsePanel(true);
+  return true;
+}
+
+function showQuickPreview(req) {
+  if (!panelExpanded || handleDragging || !req || typeof req.id !== 'string') return false;
+  const view = store.getView();
+  const kind = req.kind === 'phrase' ? 'phrase' : 'prompt';
+  const item = (kind === 'phrase' ? view.phrases : view.prompts).find((p) => p.id === req.id);
+  if (!item) return false;
+  if (!quickPreview) quickPreview = createPreviewController({
+    BrowserWindow, screen, getPanel: () => panelWin, getConfig: () => store.config,
+    sendPanel, onOutside: autoCollapsePanel,
+  });
+  quickPreview.show({ item, kind, top: Number(req.top) || 0, play: !!req.play, appearance: store.config.appearance });
+  return true;
 }
 
 // ---------------- 托盘 ----------------
@@ -259,9 +299,24 @@ function refreshTray() {
 }
 
 // ---------------- 设置窗口 ----------------
+function showSettingsWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  // Windows may apply the launcher's SW_HIDE to the first ShowWindow call.
+  // Recheck on the next turn so a background launcher cannot swallow it.
+  setImmediate(() => {
+    if (win.isDestroyed()) return;
+    if (!win.isVisible()) win.show();
+    win.focus();
+  });
+}
+
 function openSettings() {
+  quickPreview?.hide();
   if (settingsWin && !settingsWin.isDestroyed()) {
-    settingsWin.focus();
+    showSettingsWindow(settingsWin);
     return;
   }
   settingsWin = new BrowserWindow({
@@ -269,9 +324,10 @@ function openSettings() {
     height: 660,
     minWidth: 760,
     minHeight: 520,
+    show: false,
     title: '提示词助手 · 设置',
     icon: path.join(__dirname, 'assets', 'icon.png'),
-    backgroundColor: '#f6f7fb',
+    backgroundColor: store.config.appearance.theme === 'dark' ? '#222628' : '#faf9f6',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -279,7 +335,10 @@ function openSettings() {
       nodeIntegration: false,
     },
   });
-  settingsWin.loadFile(path.join(__dirname, 'src', 'settings.html'));
+  const win = settingsWin;
+  // Explicitly show even when the launcher inherited Windows SW_HIDE.
+  win.once('ready-to-show', () => showSettingsWindow(win));
+  win.loadFile(path.join(__dirname, 'src', 'settings.html'));
   settingsWin.on('closed', () => (settingsWin = null));
 }
 
@@ -427,7 +486,7 @@ async function syncAll() {
         }
         if (src.kind === 'phrase') {
           // 带上 sourceId：合并时要能逐条归属到源，否则 phrase 源一失败就无从区分
-          for (const it of items) phrases.push({ id: it.id, sourceId: prevSourceIdOf(it), name: it.title, content: it.content || it.title, origin: 'feishu' });
+          for (const it of items) phrases.push({ id: it.id, sourceId: prevSourceIdOf(it), name: it.title, content: it.content || it.title, model: it.model || '', createdAt: it.createdAt || 0, origin: 'feishu' });
         } else {
           prompts.push(...items);
         }
@@ -473,12 +532,13 @@ function notifySyncState() {
 
 function broadcastData() {
   const view = store.getView();
+  quickPreview?.refresh(view, store.config.appearance);
   const meta = {
     lastSyncAt: store.cache.lastSyncAt,
     lastError: store.config.sync.lastError,
     syncing,
   };
-  sendPanel('data:updated', { view, meta });
+  sendPanel('data:updated', { view, meta, config: store.config });
   if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('data:updated', { view, meta });
 }
 
@@ -997,7 +1057,7 @@ function registerIpc() {
     if (st && st.expanded) expandPanel(!!st.sticky);
     else collapsePanel();
   });
-  h('panel:getstate', () => ({ expanded: panelExpanded, sticky: panelSticky }));
+  h('panel:getstate', () => ({ expanded: panelExpanded, sticky: panelSticky, layout: panelBounds() }));
   h('panel:setHandlePos', (p) => {
     store.updateConfig({ panel: { handlePos: { ...(store.config.panel.handlePos || {}), ...(p || {}) } } });
     if (!panelExpanded && !handleDragging) setWinMode('collapsed');
@@ -1007,9 +1067,19 @@ function registerIpc() {
   });
   h('panel:requestExpand', (sticky) => { expandPanel(!!sticky); return true; });
   h('panel:requestCollapse', () => { collapsePanel(); return true; });
+  h('panel:collapseComplete', finishPanelCollapse);
+  h('panel:autoCollapse', autoCollapsePanel);
+  h('preview:show', showQuickPreview);
+  h('preview:hide', () => {
+    quickPreview?.hide();
+    setTimeout(autoCollapsePanel, panelCloseDelay(store.config.panel.autoCollapseMs));
+    return true;
+  });
   h('panel:dragging', (on) => {
     handleDragging = !!on;
     if (on) {
+      clearTimeout(collapseTimer); collapseTimer = null; panelMotionSequence++;
+      quickPreview?.hide();
       setWinMode('dragging');
       sendPanel('panel:drag-on');
     }
@@ -1030,6 +1100,7 @@ function registerIpc() {
       store.updateConfig({ panel: { handlePos: { ...(store.config.panel.handlePos || {}), [key]: dragFrac } } });
     }
     dragFrac = null;
+    quickPreview?.hide();
     // 拖拽结束：强制回到收起态 + 通知渲染进程重置视觉，杜绝把手缺块/残留态
     panelExpanded = false;
     panelSticky = false;
@@ -1068,7 +1139,8 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    if (argv.includes('--settings')) { openSettings(); return; }
     // 启动初期收到的 second-instance 多半是重复的开机自启项（注册表 + 启动文件夹双写、
     // 历史残留），此时唤出面板 = 开机自弹，正是用户投诉的“开机就弹出来”。
     // 20s 窗口期过后才按“用户手动双击图标想唤出面板”处理。
@@ -1111,7 +1183,7 @@ if (!gotLock) {
     scheduleAutoSync();
     screen.on('display-metrics-changed', repositionPanel);
     // 开发预览：PREVIEW_SETTINGS=1 npm start 启动后直接打开设置页
-    if (process.env.PREVIEW_SETTINGS) openSettings();
+    if (process.env.PREVIEW_SETTINGS || process.argv.includes('--settings')) openSettings();
 
     // 首次运行（无缓存）自动同步一次
     if (!store.cache.lastSyncAt) {
@@ -1125,6 +1197,7 @@ if (!gotLock) {
     // 常驻托盘，不退出
   });
   app.on('before-quit', () => {
+    quickPreview?.destroy();
     if (tray) tray.destroy();
     // 无痕模式：退出时清空临时媒体目录，不留痕迹
     if (store && store.config.behavior.mediaPersist === false) {
