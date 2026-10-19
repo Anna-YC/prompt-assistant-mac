@@ -14,6 +14,7 @@
   <section id="panel" aria-label="提示词图库">
     <aside class="rail">
       <div class="rail-brand" title="提示词助手"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h8v8c0 4-2.5 6.5-7 7v-3.5c2.4-.4 3.5-1.5 3.5-3.5H3V5Zm11 0h8v8c0 4-2.5 6.5-7 7v-3.5c2.4-.4 3.5-1.5 3.5-3.5H14V5Z" fill="currentColor"/></svg></div>
+      <button id="btnNewPrompt" class="rail-settings rail-create" aria-label="新建常用提示词" title="新建常用提示词并保存到飞书"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>新建</span></button>
       <nav id="tabRow" aria-label="内容类型"></nav>
       <div class="rail-bottom"><button id="btnSettings" class="rail-settings" aria-label="设置" title="设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 3-.6 2.3-2 .9-2.2-.6-2.5 4.3 1.6 1.7v2.3l-1.6 1.7 2.5 4.3 2.2-.6 2 .9.6 2.3h5l.6-2.3 2-.9 2.2.6 2.5-4.3-1.6-1.7v-2.3l1.6-1.7-2.5-4.3-2.2.6-2-.9-.6-2.3Z" transform="translate(0 -.75) scale(1 .94)"/><circle cx="12" cy="12" r="3"/></svg><span>设置</span></button></div>
     </aside>
@@ -36,6 +37,20 @@
       <footer class="statusbar"><span class="status-dot"></span><span id="syncInfo" role="status"></span></footer>
     </main>
   </section>
+  <dialog id="promptComposer" class="composer" aria-labelledby="composerTitle" aria-describedby="composerDescription">
+    <form id="promptForm" method="dialog">
+      <div class="composer-heading"><div><h2 id="composerTitle">新建常用提示词</h2><p id="composerDescription">保存到飞书，多台设备都能同步使用。</p></div><button id="composerClose" class="ibtn" type="button" aria-label="关闭新增表单"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+      <div class="composer-scroll"><fieldset id="composerFields" class="composer-fields">
+        <div class="composer-field"><label for="promptSource">保存到</label><select id="promptSource" name="sourceId" required></select></div>
+        <button id="composerSettings" class="composer-link hidden" type="button">去设置接入常用提示词表</button>
+        <div id="legacyPrompts" class="composer-legacy hidden"><span id="legacyPromptCount"></span><button id="migratePrompts" type="button">一并迁移</button><small>成功写入飞书后保留云端记录，收藏和复制统计一同转移。</small></div>
+        <div class="composer-field"><label for="promptTitle">标题 <span>必填</span></label><input id="promptTitle" name="title" maxlength="200" required autocomplete="off" placeholder="例如：文章润色、角色设定" /></div>
+        <div class="composer-field"><label for="promptContent">提示词正文 <span>必填</span></label><textarea id="promptContent" name="content" rows="9" maxlength="50000" required placeholder="输入或粘贴常用提示词…"></textarea></div>
+        <label class="composer-check"><input id="promptPinned" name="pinned" type="checkbox" checked /> 同时加入常用句和托盘快捷菜单</label>
+      </fieldset></div>
+      <div class="composer-footer"><p id="composerMessage" role="status" aria-live="polite"></p><div class="composer-buttons"><button id="composerCancel" type="button">取消</button><button id="saveCloudPrompt" class="composer-primary" type="submit">保存到飞书</button></div></div>
+    </form>
+  </dialog>
   <div id="toast" class="toast" role="status"></div>
   <script src="panel.js"></script>
 </body>

@@ -7,6 +7,7 @@ let expanded = false, sticky = false, dragging = null, handleHover = false;
 let collapseTimer, hoverTimer, toastTimer, searchTimer;
 let previewId = null, closing = false, automaticClosing = false, closeSequence = null;
 let hoverCard = null, hoverPoint = null, previewRequest = 0, hoverFrame;
+let composerBusy = false, composerReady = false, composerRequestId = null;
 let suppressHandleUntilLeave = false;
 let renderState = { items: [], rendered: 0 };
 const CHUNK = 30;
@@ -156,7 +157,7 @@ function markPreview(id) {
 }
 function cancelPreviewHover() { clearTimeout(hoverTimer); hoverTimer = null; hoverCard = null; }
 function queuePreview(card) {
-  if (!expanded || !card?.isConnected) { cancelPreviewHover(); return; }
+  if ($('#promptComposer').open || !expanded || !card?.isConnected) { cancelPreviewHover(); return; }
   if (hoverCard === card) return;
   cancelPreviewHover(); hoverCard = card;
   hoverTimer = setTimeout(() => {
@@ -166,7 +167,7 @@ function queuePreview(card) {
 }
 function showPreview(card, play = false) {
   clearTimeout(hoverTimer); cancelCollapse();
-  if (!expanded || !card?.isConnected) return;
+  if ($('#promptComposer').open || !expanded || !card?.isConnected) return;
   const item = findItem(card.dataset.id);
   if (!item) return;
   const request = ++previewRequest;
@@ -191,7 +192,7 @@ function requestCollapse() { cancelCollapse(); hidePreview(); body.classList.add
 function cancelCollapse() { clearTimeout(collapseTimer); collapseTimer = null; }
 function scheduleCollapse() {
   cancelCollapse();
-  if (!expanded || sticky || dragging) return;
+  if (!expanded || sticky || dragging || $('#promptComposer').open) return;
   collapseTimer = setTimeout(() => {
     collapseTimer = null;
     if (!expanded || sticky || dragging) return;
@@ -253,7 +254,91 @@ function selectTab(key) {
   hidePreview(); tab = key; sub = ''; sort = 'default';
   renderTabs(); renderSubs(); renderSorts(); renderList();
 }
+
+function composerMessage(text, error = false) {
+  $('#composerMessage').textContent = text || '';
+  $('#composerMessage').classList.toggle('error', error);
+}
+function setComposerBusy(busy, label = '正在保存…') {
+  composerBusy = busy;
+  $('#promptForm').setAttribute('aria-busy', String(busy));
+  $('#composerFields').disabled = busy;
+  $('#composerClose').disabled = busy;
+  $('#composerCancel').disabled = busy;
+  $('#saveCloudPrompt').disabled = busy || !composerReady;
+  $('#saveCloudPrompt').textContent = busy ? label : '保存到飞书';
+}
+async function loadPromptTargets() {
+  composerReady = false; setComposerBusy(false);
+  const targets = await window.api.getPromptTargets();
+  const previous = $('#promptSource').value;
+  $('#promptSource').replaceChildren(...targets.sources.map(source => new Option(source.name, source.id)));
+  $('#promptSource').value = targets.sources.some(source => source.id === previous) ? previous : targets.preferredSourceId;
+  composerReady = targets.connected && targets.sources.length > 0;
+  $('#composerSettings').classList.toggle('hidden', !!composerReady);
+  $('#legacyPrompts').classList.toggle('hidden', !targets.legacyCount);
+  $('#legacyPromptCount').textContent = targets.legacyCount + ' 条旧条目待同步';
+  $('#migratePrompts').disabled = !composerReady;
+  setComposerBusy(false);
+  if (!composerReady) composerMessage('先接入常用提示词数据表，即可在这里直接保存到飞书。');
+}
+async function openPromptComposer() {
+  const dialog = $('#promptComposer');
+  if (dialog.open) return;
+  hidePreview(); cancelCollapse(); composerMessage('正在读取数据表…');
+  await window.api.setComposing(true);
+  dialog.showModal();
+  try {
+    await loadPromptTargets();
+    if (composerReady) { composerMessage(''); ($('#promptTitle').value ? $('#promptContent') : $('#promptTitle')).focus(); }
+  } catch {
+    composerMessage('无法读取数据表，请检查连接后重新打开表单。', true);
+  }
+}
+function bindPromptComposer() {
+  const dialog = $('#promptComposer'), form = $('#promptForm');
+  $('#btnNewPrompt').addEventListener('click', openPromptComposer);
+  for (const id of ['composerClose', 'composerCancel']) $('#' + id).addEventListener('click', () => { if (!composerBusy) dialog.close(); });
+  dialog.addEventListener('cancel', (e) => { if (composerBusy) e.preventDefault(); });
+  dialog.addEventListener('close', () => { if (!dialog.open) { cancelPreviewHover(); window.api.setComposing(false); } });
+  $('#composerSettings').addEventListener('click', () => { dialog.close(); window.api.openSettings(); });
+  form.addEventListener('input', () => { if (!composerBusy) { composerRequestId = null; composerMessage(''); } });
+  form.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (composerBusy || !composerReady || !form.reportValidity()) return;
+    const title = $('#promptTitle').value.trim(), content = $('#promptContent').value.trim();
+    if (!title || !content) { composerMessage('请填写标题和提示词正文。', true); (!title ? $('#promptTitle') : $('#promptContent')).focus(); return; }
+    composerRequestId ||= crypto.randomUUID();
+    setComposerBusy(true); composerMessage('正在保存到飞书…');
+    try {
+      const result = await window.api.createCloudPrompt({ requestId: composerRequestId, sourceId: $('#promptSource').value, title, content, pinned: $('#promptPinned').checked });
+      if (!result.ok) {
+        composerMessage(result.error || '保存失败，输入已保留，请重试。', true);
+        if (result.created) composerReady = false;
+        return;
+      }
+      form.reset(); composerRequestId = null; dialog.close();
+      query = ''; $('#search').value = ''; selectTab('常用词');
+      showToast(result.warning || '已保存到飞书');
+    } catch { composerMessage('保存结果未确认，输入已保留。请先同步检查后再重试。', true); }
+    finally { setComposerBusy(false); }
+  });
+  $('#migratePrompts').addEventListener('click', async () => {
+    if (composerBusy || !composerReady) return;
+    setComposerBusy(true, '正在迁移…'); composerMessage('正在将旧条目保存到飞书，请稍候…');
+    try {
+      const result = await window.api.migrateLegacyPrompts({ sourceId: $('#promptSource').value });
+      await loadPromptTargets();
+      composerMessage(result.ok ? '旧条目已同步到飞书。' : `已保存 ${result.saved || 0} 条；${result.error || '其余条目仍保留，可以稍后重试。'}`, !result.ok);
+    } catch { composerMessage('迁移未完成，尚未成功的条目仍会保留，请稍后重试。', true); }
+    finally { setComposerBusy(false); }
+  });
+}
 function bind() {
+  bindPromptComposer();
   document.addEventListener('mouseenter', () => {
     cancelCollapse();
     if (closing && automaticClosing && !dragging) requestExpand(false);
@@ -327,6 +412,7 @@ function bind() {
     } catch { showToast('操作失败，请重试'); }
   });
   document.addEventListener('keydown', (e) => {
+    if ($('#promptComposer').open) return;
     if (e.key === 'Escape') { if (previewId) hidePreview(); else requestCollapse(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#search').focus(); }
   });

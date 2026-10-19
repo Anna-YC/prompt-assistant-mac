@@ -176,7 +176,7 @@ function bindSourceCard(card, idx) {
     if (!src.tableId) return flash($('#testMsg'), '请先选择数据表', 'err');
     const g = await window.api.guessMapping(src.tableId).catch((e) => { flash($('#testMsg'), e.message, 'err'); return null; });
     if (!g) return;
-    cfg.sources[idx].mapping = { title: g.title, content: g.content, tags: g.tags, image: g.image, note: g.note, link: g.link };
+    cfg.sources[idx].mapping = { ...g };
     await window.api.setConfig({ sources: cfg.sources });
     fillFieldSelects(card, idx);
     flash($('#testMsg'), '已按字段名自动识别', 'ok');
@@ -211,7 +211,7 @@ function rowHTML(p, kind) {
       <div class="s">${esc((p.content || '').slice(0, 80))}</div>
     </div>
     <div class="tags">${tags}</div>
-    <span class="origin">${isLocal ? '本地' : esc(p.tableName || '飞书')}</span>
+    <span class="origin">${isLocal ? '待迁移' : esc(p.tableName || '飞书')}</span>
     <div class="acts">
       <button class="iconbtn pin ${p.pinned ? 'on' : ''}" title="加入常用词（托盘右键可见）">★</button>
       <button class="iconbtn copy" title="复制内容">⧉</button>
@@ -245,7 +245,7 @@ function renderPrompts() {
   $('#promptList').innerHTML = items.slice(0, 300).map((p) => rowHTML(p, 'prompt')).join('') || '<p class="hint">暂无提示词，请先在「数据源」同步。</p>';
 }
 function renderPhrases() {
-  $('#phraseList').innerHTML = view.phrases.map((p) => rowHTML(p, 'phrase')).join('') || '<p class="hint">还没有常用句，点右上角新建。</p>';
+  $('#phraseList').innerHTML = view.phrases.map((p) => rowHTML(p, 'phrase')).join('') || '<p class="hint">收藏常用提示词后会显示在这里。</p>';
 }
 
 // ---------------- 环境自检弹窗 ----------------
@@ -367,8 +367,9 @@ async function runAutoSetup() {
 
 // ---------------- 弹窗 ----------------
 function openDlg(kind, item) {
+  if (!item) return;
   editing = { kind, id: item ? item.id : null };
-  $('#dlgTitle').textContent = item ? '编辑' : kind === 'phrase' ? '新建常用句' : '新建本地提示词';
+  $('#dlgTitle').textContent = '编辑待迁移条目';
   $('#fTitle').value = item ? item.title || item.name || '' : '';
   $('#fTags').value = item ? (item.tags || []).join(', ') : '';
   $('#fContent').value = item ? item.content || '' : '';
@@ -446,8 +447,6 @@ function bind() {
   });
 
   $('#pSearch').addEventListener('input', (e) => { pQuery = e.target.value; renderPrompts(); });
-  $('#btnAddPrompt').addEventListener('click', () => openDlg('prompt', null));
-  $('#btnAddPhrase').addEventListener('click', () => openDlg('phrase', null));
   bindRows($('#promptList'), 'prompt');
   bindRows($('#phraseList'), 'phrase');
 

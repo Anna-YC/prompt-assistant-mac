@@ -71,7 +71,7 @@ for (const file of packagedFiles) {
 const defaults = defaultConfig();
 if (defaults.baseToken || defaults.baseUrl || defaults.sources.length || defaults.phrases.local.length) findings.push({ scope: 'defaults', file: 'lib/config.js', kind: 'nonempty-user-defaults' });
 const installer = path.join(release, `提示词助手 Setup ${version}.exe`);
-const extractedArchive = path.join(root, 'output', 'privacy', 'payload', 'resources', 'app.asar');
+const extractedArchive = path.join(root, 'output', 'privacy', version, 'payload', 'resources', 'app.asar');
 const installerPayloadVerified = fs.existsSync(extractedArchive) && fs.readFileSync(extractedArchive).equals(fs.readFileSync(archive));
 if (fs.existsSync(extractedArchive) && !installerPayloadVerified) findings.push({ scope: 'installer', file: 'resources/app.asar', kind: 'extracted-payload-mismatch' });
 const report = {

@@ -34,6 +34,11 @@ if (process.env.GALLERY_TEST_FIELDS) {
   config.sources = [{id:'main',tableId:'main',name:'生图提示词-人物',kind:'prompt',enabled:true,mapping:{content:'可直接复制提示词'}}];
   require('../lib/feishu').listFields = async (_cfg, tableId) => fields[tableId] || [];
 }
+if (process.env.GALLERY_TEST_CLOUD_CLI) {
+  config.baseToken = 'fixture';
+  config.larkCliPath = process.env.GALLERY_TEST_CLOUD_CLI;
+  config.sources = [{ id:'common',tableId:'tblCommonFixture',name:'常用提示词库',kind:'prompt',enabled:true,mapping:{title:'提示词用途',content:'提示词'} }];
+}
 if (process.env.GALLERY_TEST_SYNC) {
   config.baseToken = 'fixture';
   config.sources = [{ id: 'fixture', tableId: 'tblDemo', kind: 'prompt', name: '生图提示词-人物', enabled: true }];

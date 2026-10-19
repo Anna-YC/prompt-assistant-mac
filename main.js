@@ -11,12 +11,15 @@ const { Store } = require('./lib/store');
 const feishu = require('./lib/feishu');
 const { createPreviewController, contains } = require('./lib/preview-window');
 const { panelCloseDelay } = require('./lib/config');
+const { createCloudPromptService } = require('./lib/cloud-prompts');
 
 let store;
 let tray = null;
 let panelWin = null;
 let settingsWin = null;
 let quickPreview = null;
+let cloudPrompts = null;
+let panelComposing = false;
 let syncTimer = null;
 let syncing = false;
 let panelExpanded = false;
@@ -99,7 +102,7 @@ function createPanel() {
   panelWin.setAlwaysOnTop(true, 'screen-saver'); // 高于普通置顶窗口
   panelWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   panelWin.loadFile(path.join(__dirname, 'src', 'panel.html'));
-  panelWin.on('closed', () => (panelWin = null));
+  panelWin.on('closed', () => { panelWin = null; panelComposing = false; });
   // 收起态窗口缩为把手大小（真实接收鼠标事件）；展开/拖动态为面板全尺寸
   panelWin.once('ready-to-show', () => {
     panelWin.showInactive();
@@ -176,6 +179,7 @@ function finishPanelCollapse(sequence) {
 }
 
 function collapsePanel(automatic = false) {
+  if (panelComposing) return;
   if (!panelExpanded && panelMode !== 'expanded') return;
   quickPreview?.hide();
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null; }
@@ -209,7 +213,7 @@ function handleRect() {
 }
 
 function autoCollapsePanel() {
-  if (!panelExpanded || panelSticky || handleDragging) return false;
+  if (!panelExpanded || panelSticky || handleDragging || panelComposing) return false;
   if (quickPreview?.isOpen() && quickPreview.pointerInside()) return false;
   if (panelWin && !panelWin.isDestroyed() && contains(panelWin.getBounds(), screen.getCursorScreenPoint())) return false;
   collapsePanel(true);
@@ -217,7 +221,7 @@ function autoCollapsePanel() {
 }
 
 function showQuickPreview(req) {
-  if (!panelExpanded || handleDragging || !req || typeof req.id !== 'string') return false;
+  if (!panelExpanded || handleDragging || panelComposing || !req || typeof req.id !== 'string') return false;
   const view = store.getView();
   const kind = req.kind === 'phrase' ? 'phrase' : 'prompt';
   const item = (kind === 'phrase' ? view.phrases : view.prompts).find((p) => p.id === req.id);
@@ -429,9 +433,22 @@ function mergeSyncResult({ sources, syncedSourceIds, prevPrompts, prevPhrases, f
     return !syncedSourceIds.has(sid);             // 只保留本轮失败的源
   });
 
+  const reconcile = (fresh, previous) => {
+    const old = new Map(previous.map(item => [item.id, item]));
+    const seen = new Set(fresh.map(item => item.id));
+    const items = fresh.map(item => {
+      const desktopCreatedAt = old.get(item.id)?.desktopCreatedAt;
+      return desktopCreatedAt ? { ...item, desktopCreatedAt, createdAt: item.createdAt || desktopCreatedAt } : item;
+    });
+    const pending = previous.filter(item => !seen.has(item.id) && item.cloudPendingUntil > Date.now() &&
+      sources.some(source => source.id === prevSourceIdOf(item) && source.enabled));
+    const merged = new Map();
+    for (const item of [...items, ...staleOf(previous), ...pending]) if (!merged.has(item.id)) merged.set(item.id, item);
+    return [...merged.values()];
+  };
   return {
-    prompts: [...okPrompts, ...staleOf(prevPrompts)],
-    phrases: [...okPhrases, ...staleOf(prevPhrases)],
+    prompts: reconcile(okPrompts, prevPrompts),
+    phrases: reconcile(okPhrases, prevPhrases),
     carriedOver: staleOf(prevPrompts).length + staleOf(prevPhrases).length,
   };
 }
@@ -443,8 +460,6 @@ async function syncAll() {
   notifySyncState();
   const cfg = store.config;
   const errors = [];
-  const prevPrompts = store.cache.prompts || [];
-  const prevPhrases = store.cache.phrases || [];
   // 本轮成功同步的源 id 集合：mergeSyncResult 据此决定哪些源沿用旧数据
   const syncedSourceIds = new Set();
   try {
@@ -502,8 +517,8 @@ async function syncAll() {
     const merged = mergeSyncResult({
       sources: cfg.sources,
       syncedSourceIds,
-      prevPrompts,
-      prevPhrases,
+      prevPrompts: store.cache.prompts || [],
+      prevPhrases: store.cache.phrases || [],
       freshFor: (src) => (src.kind === 'phrase' ? phrases : prompts).filter((p) => prevSourceIdOf(p) === src.id),
     });
     store.cache.prompts = merged.prompts;
@@ -1049,7 +1064,26 @@ function registerIpc() {
     return { ok: true, count: n };
   });
   h('pin:toggle', (id) => { const r = store.togglePin(id); broadcastData(); return r; });
-  h('local:save', (item) => { const r = store.upsertLocal(item); broadcastData(); return r; });
+  h('local:save', (item) => {
+    const kind = item?.kind === 'phrase' ? 'phrase' : 'prompt';
+    if (!item?.id || !store.listLocal(kind).some(existing => existing.id === item.id)) throw new Error('请从侧栏新建提示词并保存到飞书');
+    const r = store.upsertLocal(item); broadcastData(); return r;
+  });
+  h('prompt:targets', () => cloudPrompts.targets());
+  h('prompt:create', async (input) => {
+    try { return await cloudPrompts.create(input); }
+    catch (error) { return { ok: false, error: error.message, created: !!error.createdRecordId }; }
+  });
+  h('prompt:migrate', async (input) => {
+    try { return await cloudPrompts.migrate(input); }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
+  h('panel:composing', (active) => {
+    panelComposing = !!active;
+    if (panelComposing) { quickPreview?.hide(); panelWin?.focus(); }
+    else setTimeout(autoCollapsePanel, panelCloseDelay(store.config.panel.autoCollapseMs));
+    return true;
+  });
   h('local:delete', (id) => { store.deleteLocal(id); broadcastData(); return true; });
   h('panel:interactive', (on) => setPanelInteractive(!!on));
   h('panel:state', (st) => {
@@ -1057,7 +1091,7 @@ function registerIpc() {
     if (st && st.expanded) expandPanel(!!st.sticky);
     else collapsePanel();
   });
-  h('panel:getstate', () => ({ expanded: panelExpanded, sticky: panelSticky, layout: panelBounds() }));
+  h('panel:getstate', () => ({ expanded: panelExpanded, sticky: panelSticky, composing: panelComposing, layout: panelBounds() }));
   h('panel:setHandlePos', (p) => {
     store.updateConfig({ panel: { handlePos: { ...(store.config.panel.handlePos || {}), ...(p || {}) } } });
     if (!panelExpanded && !handleDragging) setWinMode('collapsed');
@@ -1153,6 +1187,7 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     log('app start, version', app.getVersion(), ', pid', process.pid, ', exe', process.execPath);
     store = new Store(app.getPath('userData'));
+    cloudPrompts = createCloudPromptService({ store, feishu, onUpdated: broadcastData });
     registerLocalProtocol();
     registerIpc();
     feishu.probeSystemNode(); // 预热：后续 lark-cli 子进程优先用系统 node，避免任何弹窗
