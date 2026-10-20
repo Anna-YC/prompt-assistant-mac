@@ -75,6 +75,12 @@ npm start            # 或双击「启动提示词助手.vbs」（无控制台�
 | 外观与行为 | 浅色/深色主题、主题色、吸附边（右/顶）、面板宽度、预览行数、收回延时、预览图开关、复制提示、开机自启 |
 | 配置与使用 | 图文说明页：首次配置 5 步流程（环境/登录/多维表/剪藏插件/接入同步）、日常用法、数据存放位置、常见问题 |
 
+## 提示词删除与同步
+
+提示词删除：侧栏点击「管理」进入选择模式，可勾选单条或「全选结果」后批量删除。选择范围仅限当前搜索、分类和排序筛选中的提示词，Skill 不参与删除；提示词侧面预览的删除按钮和设置页也支持单条删除。确认框会说明飞书源记录将一并删除，其他设备同步后也会移除。未迁移的旧本地条目只从本机删除。
+
+删除以飞书完整读回结果为准；失败或断网时保留未确认的条目，并可只重试失败项。删除成功后保存本机删除标记，拦截正在返回的旧同步结果，也覆盖重启后的旧缓存；后续一轮完整同步确认远端不存在后才清理标记。飞书删除已有记录后，下一次成功同步即移除本机条目，不再使用新增后五分钟保留规则。同步读取失败或分页不完整时保留旧缓存，不把它当作空表。同步进行期间在桌面新增的条目仍会保留，等下一轮完整读取再以飞书为准。
+
 ## 本机 Skill
 
 在原「常用句」位置增加「Skill」入口，其他导航保持原有顺序。应用启动时自动发现当前用户下已存在的 `.agents/skills`、`.agent/skills`、`.codex/skills`、`.claude/skills`、`.zcode/skills`、`.workbuddy/skills`、`.trae/skills`、`.cursor/skills` 和 `.gemini/skills`。只扫描这些技能目录，不遍历 Agent 的聊天记录、缓存或整个磁盘。「设置 → Skill」可添加项目、自定义或插件目录，也可移除默认目录。
@@ -119,6 +125,7 @@ lib/preview-window.js  独立预览窗口定位与跨窗鼠标状态
 src/settings.*     设置页 UI
 src/skills-ui.js   侧面浮窗与设置共用的技能编辑器及分类选择器
 src/skills.css     技能列表与详情样式
+src/prompt-delete.*  提示词批量选择、删除确认与失败重试
 tools/gen-icon.js  托盘图标生成（纯 Node 绘制 PNG）
 ```
 
@@ -166,6 +173,8 @@ npm start                # 开发运行（--enable-logging 可看渲染进程日
 模型与原文检查：同样环境下运行 `node tools/check-model-content.cjs`，验证旧 AI 正文映射迁移、直接读取内容、模型同步、图片/视频预览、复制与设置映射；截图保存在 `output/playwright/preview-model-*.png`。
 
 云端新增检查：同样环境下运行 `node tools/check-cloud-prompts.cjs`，使用隔离配置与模拟飞书 CLI，验证侧栏新增、正文原样写入、重复提交保护、失败保留输入、与同步并行、旧条目迁移和收藏；不会向真实飞书表格写入测试记录。
+
+删除检查：运行 `node --test tools/prompt-deletion.test.cjs` 检查跨表分批、删除标记、来源隔离和存储失败；运行 `node tools/check-prompt-deletion.cjs` 使用隔离 Electron 和模拟 CLI 验证远端删除、单条/批量删除、部分失败重试、同步并发、重启、离线和窄窗口确认。截图位于 `output/playwright/delete/`，不操作真实飞书记录。删除标记仅在本机配置中保留，不上传或随安装包分发。
 
 Skill 检查：运行 `node --test tools/skills.test.cjs` 验证元数据读取、嵌套目录与链接去重、分类收藏持久化、文件失效和旧短句迁移。使用上述 Playwright 环境运行 `node tools/check-skills.cjs` 验证实际 Electron 窗口中的分类、搜索、收藏、调用复制、深色窄窗口、目录管理和分类重命名/删除，截图位于 `output/playwright/skills/`。测试使用隔离目录和剪贴板。
 

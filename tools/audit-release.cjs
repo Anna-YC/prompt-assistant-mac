@@ -30,6 +30,9 @@ if (config) {
   for (const item of Object.values(config.skills?.metadata || {})) {
     remember(item.alias); remember(item.note);
   }
+  for (const item of Object.values(config.promptDeletions || {})) {
+    remember(item.tableId); remember(item.recordId);
+  }
   for (const source of config.sources || []) remember(source.tableId);
 }
 for (const item of [...(cache?.prompts || []), ...(cache?.phrases || [])]) {

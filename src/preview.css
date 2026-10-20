@@ -26,3 +26,4 @@
 .action-icon:hover, .action-icon.on { color: var(--acc); background: var(--acc-soft); }
 #previewPin.on svg { fill: var(--acc); }
 @media (max-height: 470px) { .preview { padding: 10px; gap: 8px; } .preview-media { height: 140px; } }
+#previewDelete { color: #c75443; }

@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="settings.css" />
   <link rel="stylesheet" href="skills.css" />
+  <link rel="stylesheet" href="prompt-delete.css" />
 </head>
 <body>
   <aside class="side">
@@ -57,8 +58,10 @@
         <input id="pSearch" class="search" placeholder="搜索…" />
         <span id="statsInfo" class="msg"></span>
         <button id="btnClearStats" class="btn sm">清空复制统计</button>
+        <button id="btnManagePrompts" class="btn sm" type="button" aria-label="管理提示词" aria-pressed="false">管理</button>
       </div>
-      <p class="hint">在侧边栏点击「新建」可直接保存常用提示词到飞书；这里可浏览、收藏和复制已有内容。</p>
+      <p class="hint">在侧边栏点击「新建」可保存常用提示词到飞书；这里支持单条和批量删除，飞书源记录也会一并移除。</p>
+      <div id="promptSelection" hidden></div>
       <div id="promptList" class="rows"></div>
     </section>
 
@@ -291,6 +294,7 @@
   </div>
 
   <script src="skills-ui.js"></script>
+  <script src="prompt-delete.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

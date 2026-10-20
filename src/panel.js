@@ -10,6 +10,7 @@ let hoverCard = null, hoverPoint = null, previewRequest = 0, hoverFrame;
 let composerBusy = false, composerReady = false, composerRequestId = null;
 let suppressHandleUntilLeave = false;
 let renderState = { items: [], rendered: 0 };
+let promptSelection;
 const CHUNK = 30;
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const basename = (s) => String(s || '').split(/[\\/]/).pop();
@@ -87,6 +88,7 @@ function appendChunk(first) {
     if (renderState.rendered >= renderState.items.length) $('#moresent')?.remove();
   }
   bindMediaLazy();
+  promptSelection?.refresh();
 }
 function renderList(resetScroll = true) {
   cancelPreviewHover();
@@ -111,6 +113,7 @@ function renderList(resetScroll = true) {
     if (!resetScroll) while (renderState.rendered < Math.min(visibleCount, items.length)) appendChunk(false);
   }
   $('#list').scrollTop = resetScroll ? 0 : previous;
+  promptSelection?.refresh();
   // Sync replaces card nodes. Reconcile the current pointer against the new
   // nodes instead of relying on another pointerover from Chromium.
   cancelAnimationFrame(hoverFrame);
@@ -170,7 +173,7 @@ function markPreview(id) {
 }
 function cancelPreviewHover() { clearTimeout(hoverTimer); hoverTimer = null; hoverCard = null; }
 function queuePreview(card) {
-  if ($('#promptComposer').open || !expanded || !card?.isConnected || (previewEditingId && previewEditingId !== card.dataset.id)) { cancelPreviewHover(); return; }
+  if ($('#promptComposer').open || window.PromptDeleteUI.isOpen() || promptSelection?.isActive() || !expanded || !card?.isConnected || (previewEditingId && previewEditingId !== card.dataset.id)) { cancelPreviewHover(); return; }
   if (hoverCard === card) return;
   cancelPreviewHover(); hoverCard = card;
   hoverTimer = setTimeout(() => {
@@ -205,7 +208,7 @@ function requestCollapse() { cancelCollapse(); hidePreview(); body.classList.add
 function cancelCollapse() { clearTimeout(collapseTimer); collapseTimer = null; }
 function scheduleCollapse() {
   cancelCollapse();
-  if (!expanded || sticky || dragging || $('#promptComposer').open || previewEditingId) return;
+  if (!expanded || sticky || dragging || $('#promptComposer').open || window.PromptDeleteUI.isOpen() || previewEditingId) return;
   collapseTimer = setTimeout(() => {
     collapseTimer = null;
     if (!expanded || sticky || dragging) return;
@@ -355,6 +358,12 @@ function bindPromptComposer() {
   });
 }
 function bind() {
+  window.PromptDeleteUI.bind(() => view, {
+    beforeOpen: () => { hidePreview(); return window.api.setComposing(true); },
+    onClose: () => window.api.setComposing(false),
+    onResult: result => { if (result.deletedIds?.length) showToast('已删除 ' + result.deletedIds.length + ' 条提示词'); },
+  });
+  promptSelection = window.createPromptSelection({ button: $('#btnManagePrompts'), toolbar: $('#promptSelection'), container: $('#list'), getItems: () => renderState.items });
   bindPromptComposer();
   document.addEventListener('mouseenter', () => {
     cancelCollapse();
@@ -434,7 +443,7 @@ function bind() {
     } catch (error) { showToast(item.kind === 'skill' ? error.message : '操作失败，请重试'); }
   });
   document.addEventListener('keydown', (e) => {
-    if ($('#promptComposer').open) return;
+    if ($('#promptComposer').open || window.PromptDeleteUI.isOpen()) return;
     if (e.key === 'Escape') { if (previewId) hidePreview(); else requestCollapse(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#search').focus(); }
   });
@@ -473,6 +482,7 @@ function bind() {
   window.api.on('panel:handle-pos', (p) => { cfg.panel.handlePos = { ...cfg.panel.handlePos, [edgeKey()]: p.frac }; setHandleVisual(expanded ? 'pos' : 'fill'); });
   window.api.on('panel:layout', (p) => { applyPanelLayout(p); body.dataset.edge = p.edge; setHandleVisual(expanded ? 'pos' : 'fill'); });
   window.api.on('panel:preview-active', (state) => { cancelCollapse(); if (state?.id) markPreview(state.id); });
+  window.api.on('panel:delete-request', state => window.PromptDeleteUI.open([state.id]));
   window.api.on('panel:preview-editing', (state) => { previewEditingId = state?.active ? state.id : null; if (previewEditingId) cancelCollapse(); });
   window.api.on('panel:preview-closed', () => { previewEditingId = null; markPreview(null); hoverCard = null; });
   window.api.on('panel:toast', (p) => showToast(p?.text));

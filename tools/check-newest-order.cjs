@@ -57,11 +57,12 @@ console.log(JSON.stringify({data:result}));`);
   app.on('window', p => p.on('pageerror', e => errors.push(e.message)));
   try {
     const panel = await app.firstWindow(); panel.setDefaultTimeout(8000);
-    await panel.waitForFunction(() => document.querySelectorAll('.card').length === 8);
+    await panel.waitForFunction(() => document.querySelectorAll('.card').length === 9);
     await panel.evaluate(() => window.api.requestExpand(true));
     await panel.waitForFunction(() => getComputedStyle(document.querySelector('#panel')).opacity === '1');
     const ids = () => panel.locator('.card').evaluateAll(els => els.map(e => e.dataset.id));
-    const expected = ['b:newest', 'a:new', 'a:tie', 'b:millis', 'b:seconds', 'a:old', 'a:missing', 'a:invalid'];
+    // 共用夹具中的旧短句现已迁为提示词；缺少时间时与其他无日期条目保持稳定顺序。
+    const expected = ['b:newest', 'a:new', 'a:tie', 'b:millis', 'b:seconds', 'a:old', 'phrase1', 'a:missing', 'a:invalid'];
     assert.deepEqual(await ids(), expected);
     assert.equal(await panel.getByRole('button', { name: '最新', exact: true }).getAttribute('aria-pressed'), 'true');
     await panel.getByRole('combobox', { name: '细分分类' }).selectOption('人物');
@@ -77,7 +78,7 @@ console.log(JSON.stringify({data:result}));`);
     await panel.getByRole('button', { name: '最新', exact: true }).click();
     assert.deepEqual(await ids(), expected);
     await panel.reload();
-    await panel.waitForFunction(() => document.querySelectorAll('.card').length === 8);
+    await panel.waitForFunction(() => document.querySelectorAll('.card').length === 9);
     assert.deepEqual(await ids(), expected);
     assert.deepEqual(errors, []);
     console.log('PASS: newest first across tables, stable ties, undated items last, category and bookmark filters, popularity override and cache reload.');

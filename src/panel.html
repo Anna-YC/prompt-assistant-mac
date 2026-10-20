@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="panel.css" />
   <link rel="stylesheet" href="skills.css" />
+  <link rel="stylesheet" href="prompt-delete.css" />
 </head>
 <body data-edge="right" data-theme="light">
   <button id="handle" aria-label="展开提示词助手" title="悬停展开 · 单击固定 · 按住 Ctrl 可拖动位置">
@@ -35,7 +36,8 @@
         <select id="groupSelect" aria-label="内容类型"></select>
         <select id="subSelect" aria-label="细分分类"></select>
       </div>
-      <div class="list-toolbar"><nav id="sortRow" aria-label="排序筛选"></nav><span id="resultCount"></span></div>
+      <div class="list-toolbar"><nav id="sortRow" aria-label="排序筛选"></nav><span id="resultCount"></span><button id="btnManagePrompts" class="manage-prompts" type="button" aria-label="管理提示词" aria-pressed="false">管理</button></div>
+      <div id="promptSelection" hidden></div>
       <div id="list" class="list" aria-label="提示词列表"></div>
       <footer class="statusbar"><span class="status-dot"></span><span id="syncInfo" role="status"></span></footer>
     </main>
@@ -55,6 +57,7 @@
     </form>
   </dialog>
   <div id="toast" class="toast" role="status"></div>
+  <script src="prompt-delete.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('api', {
   saveLocal: (item) => ipcRenderer.invoke('local:save', item),
   getPromptTargets: () => ipcRenderer.invoke('prompt:targets'),
   createCloudPrompt: (item) => ipcRenderer.invoke('prompt:create', item),
+  deletePrompts: (request) => ipcRenderer.invoke('prompt:delete', request),
+  requestPromptDeletion: (id) => ipcRenderer.invoke('prompt:requestDelete', id),
   migrateLegacyPrompts: (request) => ipcRenderer.invoke('prompt:migrate', request),
   setComposing: (active) => ipcRenderer.invoke('panel:composing', active),
   deleteLocal: (id) => ipcRenderer.invoke('local:delete', id),

@@ -416,7 +416,7 @@ function prevSourceIdOf(item) {
   return m ? m[1] : '';
 }
 // 参数全部显式传入，不读闭包：这段合并逻辑要能脱离 syncAll 单独验证。
-function mergeSyncResult({ sources, syncedSourceIds, prevPrompts, prevPhrases, freshFor }) {
+function mergeSyncResult({ sources, syncedSourceIds, prevPrompts, prevPhrases, freshFor, retainIds = new Set() }) {
   const okPrompts = [];
   const okPhrases = [];
   for (const src of sources || []) {
@@ -444,7 +444,7 @@ function mergeSyncResult({ sources, syncedSourceIds, prevPrompts, prevPhrases, f
       const desktopCreatedAt = old.get(item.id)?.desktopCreatedAt;
       return desktopCreatedAt ? { ...item, desktopCreatedAt, createdAt: item.createdAt || desktopCreatedAt } : item;
     });
-    const pending = previous.filter(item => !seen.has(item.id) && item.cloudPendingUntil > Date.now() &&
+    const pending = previous.filter(item => !seen.has(item.id) && retainIds.has(item.id) &&
       sources.some(source => source.id === prevSourceIdOf(item) && source.enabled));
     const merged = new Map();
     for (const item of [...items, ...staleOf(previous), ...pending]) if (!merged.has(item.id)) merged.set(item.id, item);
@@ -463,6 +463,9 @@ async function syncAll() {
   syncing = true;
   notifySyncState();
   const cfg = store.config;
+  const syncBaseToken = cfg.baseToken;
+  const deletionKeysAtStart = store.promptDeletionKeys();
+  const readSnapshots = new Map();
   const errors = [];
   // 本轮成功同步的源 id 集合：mergeSyncResult 据此决定哪些源沿用旧数据
   const syncedSourceIds = new Set();
@@ -490,6 +493,7 @@ async function syncAll() {
     for (const src of cfg.sources || []) {
       if (!src.enabled) continue;
       try {
+        readSnapshots.set(src.id, new Set((store.cache.prompts || []).filter(item => prevSourceIdOf(item) === src.id).map(item => item.id)));
         const items = await feishu.syncSource(cfg, src, mediaBaseDir(), () => {});
         log('sync source', src.name, '->', items.length, 'items');
         // 磁盘已有的媒体直接挂本地路径：重启后首屏即显，不必重新解析
@@ -518,15 +522,20 @@ async function syncAll() {
     // 逐源合并：成功的源用新数据，失败的源沿用上一轮缓存。
     // freshFor 按 src.kind 取对应的新数据数组（上面循环已按 kind 分桶），
     // 再按条目 sourceId 过滤出属于该源的部分。
+    if (syncBaseToken !== store.config.baseToken) throw new Error('数据源已切换，本轮旧同步结果已忽略');
+    // 只保护本次读取开始后才在桌面新增的记录。下一轮完整同步即以飞书为准，不再固定保留五分钟。
+    const retainIds = new Set((store.cache.prompts || []).filter(item => item.desktopCreatedAt && readSnapshots.has(prevSourceIdOf(item)) && !readSnapshots.get(prevSourceIdOf(item)).has(item.id)).map(item => item.id));
     const merged = mergeSyncResult({
       sources: cfg.sources,
       syncedSourceIds,
       prevPrompts: store.cache.prompts || [],
       prevPhrases: store.cache.phrases || [],
+      retainIds,
       freshFor: (src) => (src.kind === 'phrase' ? phrases : prompts).filter((p) => prevSourceIdOf(p) === src.id),
     });
-    store.cache.prompts = merged.prompts;
-    store.cache.phrases = merged.phrases;
+    store.cache.prompts = store.filterDeletedPrompts(merged.prompts);
+    store.cache.phrases = store.filterDeletedPrompts(merged.phrases);
+    store.prunePromptDeletions(deletionKeysAtStart, cfg.sources, syncedSourceIds, [...prompts, ...phrases], syncBaseToken);
     store.cache.lastSyncAt = Date.now();
     store.config.sync.lastSyncAt = Date.now();
     store.config.sync.lastError = errors.join(' | ');
@@ -1091,6 +1100,14 @@ function registerIpc() {
     const r = store.upsertLocal(item); broadcastData(); return r;
   });
   h('prompt:targets', () => cloudPrompts.targets());
+  h('prompt:delete', async (input) => {
+    try { return await cloudPrompts.remove(input); }
+    catch (error) { return { ok: false, deletedIds: [], error: error.message }; }
+  });
+  h('prompt:requestDelete', id => {
+    if (!store.getView().prompts.some(item => item.id === id)) return false;
+    quickPreview?.hide(); sendPanel('panel:delete-request', { id }); panelWin?.focus(); return true;
+  });
   h('prompt:create', async (input) => {
     try { return await cloudPrompts.create(input); }
     catch (error) { return { ok: false, error: error.message, created: !!error.createdRecordId }; }

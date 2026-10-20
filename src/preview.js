@@ -110,4 +110,5 @@ $('#previewCopy').addEventListener('click', async () => {
 });
 $('#previewPin').addEventListener('click', async () => { if (item) try { await window.api.togglePin(item.id); } catch { toast('收藏失败，请重试'); } });
 $('#previewLink').addEventListener('click', () => { if (item?.link) window.api.openExternal(item.link); });
+$('#previewDelete').addEventListener('click', () => { if (item && item.kind !== 'skill') window.api.requestPromptDeletion(item.id); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.api.hidePreview(); });

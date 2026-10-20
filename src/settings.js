@@ -9,6 +9,7 @@ let tables = [];            // [{id,name,count}]
 const fieldsCache = {};     // tableId -> [{id,name,type}]
 let editing = null;         // {kind, id} | null
 let pQuery = '';
+let promptSelection, filteredPrompts = [];
 let skillQuery = '';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -214,7 +215,7 @@ function rowHTML(p, kind) {
     <div class="acts">
       <button class="iconbtn pin ${p.pinned ? 'on' : ''}" title="加入常用词（托盘右键可见）">★</button>
       <button class="iconbtn copy" title="复制内容">⧉</button>
-      ${isLocal ? `<button class="iconbtn edit" title="编辑">✎</button><button class="iconbtn del" title="删除">✕</button>` : ''}
+      ${isLocal ? `<button class="iconbtn edit" title="编辑">✎</button>` : ''}<button class="iconbtn del" aria-label="删除提示词" title="删除提示词">✕</button>
     </div>
   </div>`;
 }
@@ -229,7 +230,7 @@ function bindRows(container, kind) {
     if (!item) return;
     if (e.target.closest('.pin')) { await window.api.togglePin(id); return; }
     if (e.target.closest('.copy')) { window.api.copy(item.content, item.title || item.name); return; }
-    if (e.target.closest('.del')) { await window.api.deleteLocal(id); return; }
+    if (e.target.closest('.del')) { await window.PromptDeleteUI.open([id]); return; }
     if (e.target.closest('.edit')) { openDlg(kind, item); return; }
   };
 }
@@ -241,7 +242,9 @@ function renderPrompts() {
   const q = pQuery.trim().toLowerCase();
   let items = view.prompts;
   if (q) items = items.filter((p) => (p.title + ' ' + (p.tags || []).join(' ') + ' ' + p.content).toLowerCase().includes(q));
+  filteredPrompts = items;
   $('#promptList').innerHTML = items.slice(0, 300).map((p) => rowHTML(p, 'prompt')).join('') || '<p class="hint">暂无提示词，请先在「数据源」同步。</p>';
+  promptSelection?.refresh();
 }
 function renderSkills() {
   const state = view.skillState || { roots: [], categories: [] };
@@ -417,6 +420,8 @@ function renderLook() {
 
 // ---------------- 绑定 ----------------
 function bind() {
+  window.PromptDeleteUI.bind(() => view);
+  promptSelection = window.createPromptSelection({ button: $('#btnManagePrompts'), toolbar: $('#promptSelection'), container: $('#promptList'), getItems: () => filteredPrompts });
   window.SkillUI.bind(() => view);
   $$('.nav').forEach((n) => n.addEventListener('click', () => {
     $$('.nav').forEach((x) => x.classList.toggle('on', x === n));
@@ -503,7 +508,7 @@ function bind() {
   });
 
   $('#btnCancel').addEventListener('click', closeDlg);
-  $('#btnDel').addEventListener('click', async () => { if (editing) { await window.api.deleteLocal(editing.id); closeDlg(); } });
+  $('#btnDel').addEventListener('click', async () => { if (editing) { const id = editing.id; closeDlg(); await window.PromptDeleteUI.open([id]); } });
   $('#btnSave').addEventListener('click', async () => {
     if (!editing) return;
     if (!$('#fTitle').value.trim() && !$('#fContent').value.trim()) return; // 拒绝空条目
