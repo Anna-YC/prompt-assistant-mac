@@ -126,12 +126,12 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     assert(await panel.evaluate(() => document.querySelector('.list').scrollWidth <= document.querySelector('.list').clientWidth));
     console.log('PASS: text-only preview, dark mode, 320/560px width changes');
 
-    await panel.getByRole('combobox', { name: '内容类型', exact: true }).selectOption('phrase');
-    assert((await panel.locator('.card.phrase').count()) > 0);
+    await panel.getByRole('combobox', { name: '内容类型', exact: true }).selectOption('skills');
+    assert(await panel.getByText('暂未发现 Skill', { exact: true }).isVisible());
     await panel.getByRole('combobox', { name: '内容类型', exact: true }).selectOption('all');
     await panel.locator('#list').evaluate((el) => { el.scrollTop = el.scrollHeight; });
     await panel.waitForFunction(() => document.querySelectorAll('.card').length > 30);
-    console.log('PASS: phrases and incremental scrolling');
+    console.log('PASS: Skill entry replaces snippets; prompt incremental scrolling');
 
     await panel.evaluate(() => window.api.setConfig({ panel: { edge: 'top', width: 384 } })).catch((err) => {
       // Changing docking edge intentionally destroys and recreates this window.

@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; }
 body {
-  font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  font-family: var(--font-ui);
   background: transparent; color: var(--ink); overflow: hidden; user-select: none;
   --acc: #ed7059; --acc-hover: #d95e48; --acc-soft: #fff0eb;
   --ink: #25282b; --muted: #777d82; --line: #e7e5e1;
@@ -97,9 +97,6 @@ h1 { font-size: 15px; letter-spacing: -.3px; margin: 0; white-space: nowrap; }
 .quick-copy svg { width: 15px; height: 15px; }
 .card:hover .quick-copy, .card:focus-within .quick-copy { opacity: 1; }
 .quick-copy:hover { background: var(--acc); color: white; border-color: var(--acc); }
-.card.phrase { grid-column: 1 / -1; }
-.card.phrase .media { aspect-ratio: auto; min-height: 80px; }
-.card.phrase .text-sample { -webkit-line-clamp: var(--lines,2); }
 .empty { grid-column: 1 / -1; text-align: center; padding: 52px 10px; color: var(--muted); font-size: 12px; line-height: 1.9; }
 .empty svg { width: 32px; height: 32px; margin-bottom: 12px; }
 .empty strong { display: block; color: var(--ink); font-size: 14px; margin-bottom: 8px; }

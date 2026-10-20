@@ -26,6 +26,7 @@ desktop.ini
 /config.json
 /cache.json
 /stats.json
+/skills.json
 /credentials.json
 /auth.json
 *.pem

@@ -3,7 +3,7 @@
 html, body { height: 100%; }
 body {
   display: flex;
-  font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  font-family: var(--font-ui);
   background: #faf9f6; color: #25282b; font-size: 13px;
   --accent: #ed7059; --line: #e7e5e1; --muted: #777d82; --card: #fff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--card));
@@ -18,7 +18,7 @@ body[data-theme="dark"] { background: #222628; color: #f0efed; --line: #383e40; 
 }
 .logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 14px; padding: 0 8px 32px; }
 .logo small { display: block; margin-top: 4px; color: #a4aaa9; font-size: 10px; font-weight: 400; letter-spacing: 2px; }
-.logo .dot { width: 28px; height: 32px; border-right: 2px solid var(--accent); color: #fff; font: bold 36px/42px Georgia,serif; flex-shrink: 0; }
+.logo .dot { width: 28px; height: 32px; border-right: 2px solid var(--accent); color: #fff; font: 700 36px/42px var(--font-ui); flex-shrink: 0; }
 nav { display: flex; flex-direction: column; gap: 6px; }
 .nav {
   display: flex; align-items: center; gap: 10px; text-align: left; padding: 12px; border: none; background: transparent; border-radius: 8px;
@@ -163,7 +163,7 @@ body[data-theme="dark"] .guide .step .st > b { color: #eeefeb; }
 .guide .step .st ul { margin: 2px 0 2px 18px; }
 .guide code {
   background: var(--accent-soft); color: var(--accent); border-radius: 5px;
-  padding: 1px 6px; font-size: 11.5px; font-family: Consolas, "Courier New", monospace;
+  padding: 1px 6px; font-size: 11.5px; font-family: var(--font-ui);
 }
 
 /* 环境自检行 */

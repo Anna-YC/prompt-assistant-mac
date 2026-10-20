@@ -1,6 +1,9 @@
 'use strict';
 const $ = (s) => document.querySelector(s);
-let item = null, sequence = 0, toastTimer, copyTimer;
+let item = null, sequence = 0, toastTimer, copyTimer, categories = [];
+window.SkillUI.bind(() => ({ skills: item?.kind === 'skill' ? [item] : [], skillState: { categories } }), {
+  inline: true, onEditing: state => window.api.setPreviewEditing(state), onClose: () => window.api.hidePreview(),
+});
 const localUrl = (p) => 'localimg:///' + encodeURIComponent(String(p).split(/[\\/]/).pop());
 function resetMedia() {
   const video = $('#previewVideo');
@@ -13,9 +16,13 @@ function resetMedia() {
 }
 function refresh(p) {
   item = p.item;
+  categories = p.categories || [];
   document.body.dataset.theme = p.appearance?.theme === 'dark' ? 'dark' : 'light';
   document.body.style.setProperty('--acc', p.appearance?.accent || '#ed7059');
   $('#previewTitle').textContent = item.title || item.name || '提示词';
+  $('.preview').classList.toggle('skill-mode', p.kind === 'skill');
+  if (p.kind === 'skill') { window.SkillUI.open(item); return; }
+  window.SkillUI.hide();
   $('#previewText').textContent = item.content || '暂无正文';
   const model = typeof item.model === 'string' ? item.model.trim() : '';
   $('#previewModel').textContent = model || '未标注';
@@ -58,6 +65,7 @@ async function playVideo() {
 async function show(p) {
   const ticket = ++sequence;
   resetMedia(); refresh(p); $('#previewText').scrollTop = 0;
+  if (p.kind === 'skill') { if (p.focus) $('#skillCopy').focus(); return; }
   clearTimeout(copyTimer); $('#previewCopy span').textContent = '复制提示词';
   const target = item;
   const hasMedia = !!(target.image?.fileToken || target.video?.fileToken);
@@ -82,7 +90,8 @@ function toast(text) {
 }
 window.api.on('preview:item', show);
 window.api.on('preview:refresh', (p) => { if (item?.id === p.item.id) refresh(p); });
-window.api.on('preview:hide', () => { ++sequence; resetMedia(); item = null; });
+window.api.on('preview:hide', () => { ++sequence; resetMedia(); window.SkillUI.hide(); item = null; });
+window.api.on('stats:updated', (p) => { if (item?.id === p.id && item.kind === 'skill') { item.copyCount = p.count; window.SkillUI.refresh(); } });
 $('#previewImage').addEventListener('error', () => { $('#previewImage').classList.add('hidden'); $('#mediaMessage').textContent = '图片暂时不可用，仍可复制全文'; });
 $('#previewVideo').addEventListener('error', () => { if (item) toast('视频暂时无法播放'); });
 $('#playVideo').addEventListener('click', playVideo);

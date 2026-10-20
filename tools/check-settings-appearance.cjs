@@ -69,7 +69,7 @@ const output = path.join(root, 'output', 'playwright');
     await settings.locator('#handleOpacity').fill('80');
     await settings.waitForFunction(() => document.querySelector('#lookSaveState').textContent === '已自动保存');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().endsWith('/settings.html')).setSize(760, 660));
-    for (const tab of ['source', 'prompt', 'phrase', 'look', 'guide']) {
+    for (const tab of ['source', 'prompt', 'skills', 'look', 'guide']) {
       await settings.locator(`[data-tab="${tab}"]`).click();
       const noOverflow = await settings.locator('main').evaluate(e => e.scrollWidth <= e.clientWidth);
       assert(noOverflow, `No horizontal overflow in ${tab} at minimum width`);

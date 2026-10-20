@@ -12,6 +12,7 @@ const feishu = require('./lib/feishu');
 const { createPreviewController, contains } = require('./lib/preview-window');
 const { panelCloseDelay } = require('./lib/config');
 const { createCloudPromptService } = require('./lib/cloud-prompts');
+const { SkillLibrary } = require('./lib/skills');
 
 let store;
 let tray = null;
@@ -214,7 +215,7 @@ function handleRect() {
 
 function autoCollapsePanel() {
   if (!panelExpanded || panelSticky || handleDragging || panelComposing) return false;
-  if (quickPreview?.isOpen() && quickPreview.pointerInside()) return false;
+  if (quickPreview?.isOpen() && (quickPreview.isEditing() || quickPreview.pointerInside())) return false;
   if (panelWin && !panelWin.isDestroyed() && contains(panelWin.getBounds(), screen.getCursorScreenPoint())) return false;
   collapsePanel(true);
   return true;
@@ -223,21 +224,21 @@ function autoCollapsePanel() {
 function showQuickPreview(req) {
   if (!panelExpanded || handleDragging || panelComposing || !req || typeof req.id !== 'string') return false;
   const view = store.getView();
-  const kind = req.kind === 'phrase' ? 'phrase' : 'prompt';
-  const item = (kind === 'phrase' ? view.phrases : view.prompts).find((p) => p.id === req.id);
+  const skill = (view.skills || []).find((p) => p.id === req.id);
+  const kind = skill ? 'skill' : 'prompt';
+  const item = skill || view.prompts.find((p) => p.id === req.id);
   if (!item) return false;
   if (!quickPreview) quickPreview = createPreviewController({
     BrowserWindow, screen, getPanel: () => panelWin, getConfig: () => store.config,
     sendPanel, onOutside: autoCollapsePanel,
   });
-  quickPreview.show({ item, kind, top: Number(req.top) || 0, play: !!req.play, appearance: store.config.appearance });
-  return true;
+  return quickPreview.show({ item, kind, top: Number(req.top) || 0, play: !!req.play, focus: !!req.focus, appearance: store.config.appearance, categories: view.skillState?.categories || [] });
 }
 
 // ---------------- 托盘 ----------------
 function buildTrayMenu() {
   const menu = new Menu();
-  const { prompts, phrases } = store.getTrayItems();
+  const { prompts, skills } = store.getTrayItems();
 
   menu.append(new MenuItem({ label: panelExpanded ? '收起面板' : '打开面板', click: () => togglePanel() }));
   menu.append(new MenuItem({ label: '设置…', click: () => openSettings() }));
@@ -246,13 +247,15 @@ function buildTrayMenu() {
 
   const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-  // 常用句（平铺，短文本）
-  if (phrases.length) {
+  if (skills.length) {
     const sub = new Menu();
-    for (const p of phrases) {
-      sub.append(new MenuItem({ label: trunc(p.name || p.title || '常用句', 22), click: () => copyText(p.content, p.name, p.id) }));
+    for (const item of skills) {
+      sub.append(new MenuItem({ label: trunc(item.title, 22), click: async () => {
+        try { copyText(await store.skills.prompt(item.id), item.title, item.id); }
+        catch (error) { sendPanel('panel:toast', { text: error.message }); }
+      } }));
     }
-    menu.append(new MenuItem({ label: `常用句 (${phrases.length})`, submenu: sub }));
+    menu.append(new MenuItem({ label: `Skill (${skills.length})`, submenu: sub }));
   }
 
   // 提示词：条目少时平铺，多时按标签分组，控制菜单密度
@@ -356,6 +359,7 @@ function copyText(text, label, id) {
     store.recordCopy(id);
     const payload = { id, count: store.copyCountOf(id) };
     sendPanel('stats:updated', payload);
+    quickPreview?.updateStats(payload);
     if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('stats:updated', payload);
   }
   if (store.config.behavior.copyToast !== false) {
@@ -913,6 +917,23 @@ function registerIpc() {
     return store.config;
   });
   h('sync:now', () => syncAll());
+  h('skills:scan', () => store.skills.scan());
+  h('skills:discover', () => store.skills.discoverRoots());
+  h('skills:update', (input) => { const item = store.skills.update(input); broadcastData(); return item; });
+  h('skills:category', ({ from, to }) => { const state = store.skills.renameCategory(from, to); broadcastData(); return state; });
+  h('skills:roots', async (roots) => { try { return await store.skills.setRoots(roots); } finally { broadcastData(); } });
+  h('skills:pickRoot', async () => {
+    const result = await dialog.showOpenDialog(settingsWin || panelWin, { title: '选择 Skill 目录', properties: ['openDirectory'] });
+    return result.canceled ? null : result.filePaths[0];
+  });
+  h('skills:copy', async (id, editedText) => {
+    // 即使用户改写了任务，也先验证技能文件仍可读，避免复制失效技能的调用词。
+    const original = await store.skills.prompt(id);
+    if (editedText !== undefined && (typeof editedText !== 'string' || !editedText.trim() || editedText.length > 50000)) throw new Error('请填写调用提示词（最多 50000 字）');
+    const text = editedText === undefined ? original : editedText;
+    const item = store.skills.items().find(item => item.id === id);
+    return copyText(text, item.title, id);
+  });
   h('copy:text', (text, label, id) => copyText(text, label, id));
   h('stats:clear', () => { store.clearStats(); broadcastData(); return true; });
   h('dialog:pickDir', async () => {
@@ -1104,6 +1125,7 @@ function registerIpc() {
   h('panel:collapseComplete', finishPanelCollapse);
   h('panel:autoCollapse', autoCollapsePanel);
   h('preview:show', showQuickPreview);
+  h('preview:editing', (state) => quickPreview?.setEditing(state) || false);
   h('preview:hide', () => {
     quickPreview?.hide();
     setTimeout(autoCollapsePanel, panelCloseDelay(store.config.panel.autoCollapseMs));
@@ -1187,6 +1209,7 @@ if (!gotLock) {
   app.whenReady().then(async () => {
     log('app start, version', app.getVersion(), ', pid', process.pid, ', exe', process.execPath);
     store = new Store(app.getPath('userData'));
+    store.skills = new SkillLibrary(store, broadcastData);
     cloudPrompts = createCloudPromptService({ store, feishu, onUpdated: broadcastData });
     registerLocalProtocol();
     registerIpc();
@@ -1215,6 +1238,8 @@ if (!gotLock) {
     createTray();
     refreshTray();
     createPanel();
+    const skillScan = store.skills.scan();
+    skillScan.catch(error => log('skill scan failed:', error.message));
     scheduleAutoSync();
     screen.on('display-metrics-changed', repositionPanel);
     // 开发预览：PREVIEW_SETTINGS=1 npm start 启动后直接打开设置页

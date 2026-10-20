@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>提示词助手</title>
+  <link rel="preload" href="../assets/fonts/AlibabaPuHuiTi-2-55-Regular.ttf" as="font" type="font/ttf" crossorigin />
+  <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="panel.css" />
+  <link rel="stylesheet" href="skills.css" />
 </head>
 <body data-edge="right" data-theme="light">
   <button id="handle" aria-label="展开提示词助手" title="悬停展开 · 单击固定 · 按住 Ctrl 可拖动位置">
@@ -46,7 +49,7 @@
         <div id="legacyPrompts" class="composer-legacy hidden"><span id="legacyPromptCount"></span><button id="migratePrompts" type="button">一并迁移</button><small>成功写入飞书后保留云端记录，收藏和复制统计一同转移。</small></div>
         <div class="composer-field"><label for="promptTitle">标题 <span>必填</span></label><input id="promptTitle" name="title" maxlength="200" required autocomplete="off" placeholder="例如：文章润色、角色设定" /></div>
         <div class="composer-field"><label for="promptContent">提示词正文 <span>必填</span></label><textarea id="promptContent" name="content" rows="9" maxlength="50000" required placeholder="输入或粘贴常用提示词…"></textarea></div>
-        <label class="composer-check"><input id="promptPinned" name="pinned" type="checkbox" checked /> 同时加入常用句和托盘快捷菜单</label>
+        <label class="composer-check"><input id="promptPinned" name="pinned" type="checkbox" checked /> 同时收藏并加入托盘快捷菜单</label>
       </fieldset></div>
       <div class="composer-footer"><p id="composerMessage" role="status" aria-live="polite"></p><div class="composer-buttons"><button id="composerCancel" type="button">取消</button><button id="saveCloudPrompt" class="composer-primary" type="submit">保存到飞书</button></div></div>
     </form>

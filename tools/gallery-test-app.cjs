@@ -4,6 +4,7 @@ const { app, screen, clipboard } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
+if (process.env.GALLERY_TEST_SKILL_HOME) require('os').homedir = () => process.env.GALLERY_TEST_SKILL_HOME;
 const profile = path.join(root, 'output', 'playwright', 'gallery-profile');
 fs.mkdirSync(profile, { recursive: true });
 app.setPath('userData', profile);
@@ -13,12 +14,20 @@ config.behavior.launchAtLogin = false;
 // Verify that upgrading an existing profile removes the old 550ms delay.
 config.panel.autoCollapseMs = 550;
 config.local = { prompt: [], phrase: [{ id: 'phrase1', title: '电影感光影', content: '自然柔和的光线，细腻丰富的画面层次。', tags: ['光影'] }] };
+config.skills.roots = process.env.GALLERY_TEST_SKILL_ROOT ? [process.env.GALLERY_TEST_SKILL_ROOT] : [];
+const { SkillLibrary } = require('../lib/skills');
+const updateSkill = SkillLibrary.prototype.update;
+SkillLibrary.prototype.update = function(input) {
+  if (global.galleryFailSkillSave) throw new Error('模拟保存失败');
+  return updateSkill.call(this, input);
+};
 const mediaDir = path.join(root, 'cache', 'media');
 const files = fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir).filter((s) => /\.(png|jpe?g|webp)$/i.test(s)).slice(0, 12) : [];
 const videoFile = fs.existsSync(mediaDir) ? fs.readdirSync(mediaDir).find((s) => /\.mp4$/i.test(s)) : null;
 const titles = ['漫剧人物三视图', '山水场景', '电影感运镜', '产品光影', '极简海报', '图片转3D风格', '室内场景', '萌宠生物特写'];
 const prompts = Array.from({ length: 72 }, (_, i) => ({
   id: 'demo' + i, tableId: 'tblDemo', recordId: 'rec' + i,
+  createdAt: 1700000000000 - i * 1000,
   title: titles[i % titles.length] + (i >= 8 ? ' ' + (i + 1) : ''),
   content: i === 1 ? '生成中国山水场景，层叠的远山与云雾，柔和的光影，细腻的材质和构图。' : '生成同一角色的正面、侧面与背面视图，保持角色外貌、服装和风格一致。\n自然柔和的光线，细腻丰富的画面层次。适用于角色设定与创作参考。'.repeat(i === 0 ? 5 : 1),
   tableName: i % 4 === 2 ? '视频提示词-成品' : i % 7 === 6 ? '常用提示词库' : '生图提示词-' + (i % 2 ? '环境' : '人物'),

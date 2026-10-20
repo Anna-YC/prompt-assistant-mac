@@ -3,12 +3,13 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 let cfg = null;
-let view = { prompts: [], phrases: [], tags: [] };
+let view = { prompts: [], skills: [], tags: [] };
 let meta = {};
 let tables = [];            // [{id,name,count}]
 const fieldsCache = {};     // tableId -> [{id,name,type}]
 let editing = null;         // {kind, id} | null
 let pQuery = '';
+let skillQuery = '';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const PALETTE = [
@@ -40,14 +41,14 @@ function renderAll() {
   applySettingsAppearance();
   renderSource();
   renderPrompts();
-  renderPhrases();
+  renderSkills();
   renderLook();
   renderSyncInfo();
 }
 
 function renderSyncInfo() {
   const t = meta.lastSyncAt ? new Date(meta.lastSyncAt).toLocaleString('zh-CN', { hour12: false }) : '从未同步';
-  $('#syncInfo').innerHTML = `上次同步<br><b>${esc(t)}</b><br>${view.prompts.length} 条提示词 · ${view.phrases.length} 条常用句`;
+  $('#syncInfo').innerHTML = `上次同步<br><b>${esc(t)}</b><br>${view.prompts.length} 条提示词 · ${(view.skills || []).length} 个 Skill`;
 }
 
 // ---------------- 数据源 ----------------
@@ -66,15 +67,13 @@ function renderSource() {
       <div class="srchead">
         <input type="checkbox" data-k="enabled" ${src.enabled ? 'checked' : ''} title="启用" />
         <span class="nm">${esc(src.name || '未命名')}</span>
-        <span class="badge">${src.kind === 'phrase' ? '常用句源' : '提示词源'}</span>
+        <span class="badge">提示词源</span>
         <button class="btn sm" data-act="guess">自动识别字段</button>
         <button class="btn sm" data-act="del">移除</button>
       </div>
       <div class="mapgrid">
         <label>数据表</label>
         <select data-k="tableId">${tableOptions(src.tableId)}</select>
-        <label>类型</label>
-        <select data-k="kind"><option value="prompt" ${src.kind !== 'phrase' ? 'selected' : ''}>提示词</option><option value="phrase" ${src.kind === 'phrase' ? 'selected' : ''}>常用句</option></select>
         <label>标题字段</label><select data-k="title" data-map="1"></select>
         <label>正文字段</label><select data-k="content" data-map="1" title="直接读取剪藏时保存的内容"></select>
         <label>标签字段</label><div class="tagpicks" data-k="tags"></div>
@@ -198,7 +197,7 @@ function flash(el, msg, cls) {
   setTimeout(() => { el.textContent = ''; el.className = 'msg'; }, 4000);
 }
 
-// ---------------- 提示词 / 常用句列表 ----------------
+// ---------------- 提示词列表 ----------------
 function rowHTML(p, kind) {
   const tags = (p.tags || []).slice(0, 3).map((t) => {
     const [bg, fg] = tagColor(t);
@@ -225,7 +224,7 @@ function bindRows(container, kind) {
     const row = e.target.closest('.lrow');
     if (!row) return;
     const id = row.dataset.id;
-    const list = kind === 'prompt' ? view.prompts : view.phrases;
+    const list = view.prompts;
     const item = list.find((x) => x.id === id);
     if (!item) return;
     if (e.target.closest('.pin')) { await window.api.togglePin(id); return; }
@@ -236,16 +235,29 @@ function bindRows(container, kind) {
 }
 
 function renderPrompts() {
-  const total = [...view.prompts, ...view.phrases].reduce((s, p) => s + (p.copyCount || 0), 0);
-  const used = [...view.prompts, ...view.phrases].filter((p) => (p.copyCount || 0) > 0).length;
+  const total = [...view.prompts, ...(view.skills || [])].reduce((s, p) => s + (p.copyCount || 0), 0);
+  const used = [...view.prompts, ...(view.skills || [])].filter((p) => (p.copyCount || 0) > 0).length;
   $('#statsInfo').textContent = total ? `累计复制 ${total} 次 · ${used} 条` : '';
   const q = pQuery.trim().toLowerCase();
   let items = view.prompts;
   if (q) items = items.filter((p) => (p.title + ' ' + (p.tags || []).join(' ') + ' ' + p.content).toLowerCase().includes(q));
   $('#promptList').innerHTML = items.slice(0, 300).map((p) => rowHTML(p, 'prompt')).join('') || '<p class="hint">暂无提示词，请先在「数据源」同步。</p>';
 }
-function renderPhrases() {
-  $('#phraseList').innerHTML = view.phrases.map((p) => rowHTML(p, 'phrase')).join('') || '<p class="hint">收藏常用提示词后会显示在这里。</p>';
+function renderSkills() {
+  const state = view.skillState || { roots: [], categories: [] };
+  $('#btnScanSkills').disabled = !!state.scanning;
+  $('#btnScanSkills').textContent = state.scanning ? '扫描中…' : '重新扫描';
+  $('#btnDiscoverSkillRoots').disabled = !!state.scanning;
+  $('#btnAddSkillRoot').disabled = !!state.scanning;
+  $('#skillScanInfo').textContent = `${(view.skills || []).length} 个本机 Skill · ${state.roots.length} 个目录`;
+  $('#skillRoots').innerHTML = state.roots.map((root, index) => `<div class="skill-setting-row"><code>${esc(root)}</code><button class="btn sm" data-root-index="${index}"${state.scanning ? ' disabled' : ''}>移除</button></div>`).join('') || '<p class="hint">尚未设置扫描目录。</p>';
+  $('#skillScanErrors').replaceChildren(...(state.errors || []).map(error => { const line = document.createElement('p'); line.textContent = error.path + '：' + error.message; return line; }));
+  // 其他窗口的收藏广播不打断正在编辑的分类名称。
+  if (!$('#skillCategoryRows').contains(document.activeElement)) $('#skillCategoryRows').innerHTML = state.categories.map((category, index) => `<div class="skill-setting-row" data-category-index="${index}"><input value="${esc(category)}" aria-label="分类名称" maxlength="40" /><button class="btn sm" data-category-action="save">改名</button><button class="btn sm" data-category-action="delete">删除</button></div>`).join('') || '<p class="hint">还没有分类，可点击下方技能添加。</p>';
+  const query = skillQuery.trim().toLowerCase();
+  const items = (view.skills || []).filter(item => [item.title, item.name, item.description, item.note, item.category].join(' ').toLowerCase().includes(query));
+  $('#skillList').innerHTML = items.map(item => `<div class="lrow" data-id="${esc(item.id)}"><div class="main"><button class="skill-setting-open">${esc(item.title)}</button><div class="s">${esc(item.note || item.description || '点击补充用途备注')}</div></div><span class="origin">${esc(item.sub)}</span><div class="acts"><button class="iconbtn skill-setting-pin ${item.pinned ? 'on' : ''}" aria-label="${item.pinned ? '取消收藏' : '收藏'}" aria-pressed="${!!item.pinned}">★</button></div></div>`).join('') || '<p class="hint">没有找到 Skill，请检查扫描目录或更换关键词。</p>';
+  window.SkillUI.refresh();
 }
 
 // ---------------- 环境自检弹窗 ----------------
@@ -405,6 +417,7 @@ function renderLook() {
 
 // ---------------- 绑定 ----------------
 function bind() {
+  window.SkillUI.bind(() => view);
   $$('.nav').forEach((n) => n.addEventListener('click', () => {
     $$('.nav').forEach((x) => x.classList.toggle('on', x === n));
     $$('.tab').forEach((t) => t.classList.toggle('on', t.id === 'tab-' + n.dataset.tab));
@@ -448,7 +461,46 @@ function bind() {
 
   $('#pSearch').addEventListener('input', (e) => { pQuery = e.target.value; renderPrompts(); });
   bindRows($('#promptList'), 'prompt');
-  bindRows($('#phraseList'), 'phrase');
+  $('#skillSearch').addEventListener('input', event => { skillQuery = event.target.value; renderSkills(); });
+  $('#btnScanSkills').addEventListener('click', async () => {
+    try { await window.api.scanSkills(); } catch (error) { $('#skillScanInfo').textContent = '扫描失败：' + error.message; }
+  });
+  $('#btnAddSkillRoot').addEventListener('click', async () => {
+    try {
+      const root = await window.api.pickSkillRoot();
+      if (root) await window.api.setSkillRoots([...(view.skillState?.roots || []), root]);
+    } catch (error) { $('#skillScanInfo').textContent = '添加失败：' + error.message; }
+  });
+  $('#btnDiscoverSkillRoots').addEventListener('click', async () => {
+    $('#btnDiscoverSkillRoots').disabled = true;
+    try { await window.api.discoverSkillRoots(); }
+    catch (error) { $('#skillScanInfo').textContent = '发现目录失败：' + error.message; }
+    finally { $('#btnDiscoverSkillRoots').disabled = false; }
+  });
+  $('#skillRoots').addEventListener('click', async event => {
+    const button = event.target.closest('[data-root-index]');
+    if (!button) return;
+    try { await window.api.setSkillRoots(view.skillState.roots.filter((_, index) => index !== Number(button.dataset.rootIndex))); }
+    catch (error) { $('#skillScanInfo').textContent = '修改失败：' + error.message; }
+  });
+  $('#skillCategoryRows').addEventListener('click', async event => {
+    const button = event.target.closest('[data-category-action]');
+    if (!button) return;
+    const row = button.closest('[data-category-index]');
+    const from = view.skillState.categories[Number(row.dataset.categoryIndex)];
+    const to = button.dataset.categoryAction === 'delete' ? '' : row.querySelector('input').value;
+    try { await window.api.renameSkillCategory({ from, to }); document.activeElement?.blur(); renderSkills(); }
+    catch (error) { $('#skillScanInfo').textContent = '修改失败：' + error.message; }
+  });
+  $('#skillList').addEventListener('click', async event => {
+    const row = event.target.closest('[data-id]');
+    const item = (view.skills || []).find(item => item.id === row?.dataset.id);
+    if (!item) return;
+    try {
+      if (event.target.closest('.skill-setting-pin')) await window.api.togglePin(item.id);
+      else if (event.target.closest('.skill-setting-open')) await window.SkillUI.open(item);
+    } catch (error) { $('#skillScanInfo').textContent = error.message; }
+  });
 
   $('#btnCancel').addEventListener('click', closeDlg);
   $('#btnDel').addEventListener('click', async () => { if (editing) { await window.api.deleteLocal(editing.id); closeDlg(); } });
@@ -539,7 +591,7 @@ function bind() {
   $('#btnEnvRe').addEventListener('click', () => runEnvCheck());
   $('#launchAtLogin').addEventListener('change', (e) => look({ behavior: { launchAtLogin: e.target.checked } }));
 
-  window.api.on('data:updated', (p) => { view = p.view; meta = p.meta; renderPrompts(); renderPhrases(); renderSyncInfo(); });
+  window.api.on('data:updated', (p) => { view = p.view; meta = p.meta; renderPrompts(); renderSkills(); renderSyncInfo(); });
   window.api.on('env:setupProgress', (p) => setEnvMsg(p.msg || ''));
   window.api.on('env:loginDone', async (p) => {
     if (p.ok) {
@@ -553,7 +605,7 @@ function bind() {
   window.api.on('stats:updated', async () => {
     const d = await window.api.getData();
     view = d.view; meta = d.meta;
-    renderPrompts(); renderPhrases(); renderSyncInfo();
+    renderPrompts(); renderSkills(); renderSyncInfo();
   });
   window.api.on('sync:state', (p) => { meta.syncing = p.syncing; if (p.syncing) flash($('#syncMsg'), '同步中…', ''); });
 }

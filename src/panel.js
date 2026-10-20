@@ -1,11 +1,11 @@
 'use strict';
 const $ = (s) => document.querySelector(s);
 const body = document.body;
-let view = { prompts: [], phrases: [] }, cfg = {}, meta = {};
+let view = { prompts: [], skills: [] }, cfg = {}, meta = {};
 let tab = 'all', sub = '', sort = 'default', query = '';
 let expanded = false, sticky = false, dragging = null, handleHover = false;
 let collapseTimer, hoverTimer, toastTimer, searchTimer;
-let previewId = null, closing = false, automaticClosing = false, closeSequence = null;
+let previewId = null, previewEditingId = null, closing = false, automaticClosing = false, closeSequence = null;
 let hoverCard = null, hoverPoint = null, previewRequest = 0, hoverFrame;
 let composerBusy = false, composerReady = false, composerRequestId = null;
 let suppressHandleUntilLeave = false;
@@ -21,24 +21,25 @@ const icons = {
   video: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/>'),
   star: svg('<path d="M7 3h10a1 1 0 0 1 1 1v17l-6-4-6 4V4a1 1 0 0 1 1-1Z"/>'),
   hot: svg('<path d="M5 20V10M12 20V4M19 20v-7"/>'),
-  phrase: svg('<path d="M8 19H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-6l-5 3Z"/><path d="M8 9v3H6V9h2Zm7 0v3h-2V9h2Z"/>'),
+  skills: svg('<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z M4 7.5l8 5 8-5M12 12.5V21"/>'),
   copy: svg('<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>'),
 };
 const TABS = [
   { key: 'all', label: '全部', icon: 'all' }, { key: '常用词', label: '常用词', icon: 'text' },
   { key: '生图词', label: '生图词', icon: 'image' }, { key: '视频词', label: '视频词', icon: 'video' },
   { key: 'star', label: '已收藏', icon: 'star' }, { key: 'hot', label: '高频', icon: 'hot' },
-  { key: 'phrase', label: '常用句', icon: 'phrase' },
+  { key: 'skills', label: 'Skill', icon: 'skills' },
 ];
 function currentPool(key = tab) {
-  if (key === 'phrase') return view.phrases;
-  if (key === 'hot') return view.prompts.filter((p) => p.copyCount > 0);
-  if (key === 'star') return view.prompts.filter((p) => p.pinned);
-  if (key === 'all') return view.prompts;
+  const all = [...view.prompts, ...(view.skills || [])];
+  if (key === 'skills') return view.skills || [];
+  if (key === 'hot') return all.filter((p) => p.copyCount > 0);
+  if (key === 'star') return all.filter((p) => p.pinned);
+  if (key === 'all') return all;
   return view.prompts.filter((p) => p.group === key);
 }
 function findItem(id) {
-  return (tab === 'phrase' ? view.phrases : view.prompts).find((p) => p.id === id);
+  return [...view.prompts, ...(view.skills || [])].find((p) => p.id === id);
 }
 function renderTabs() {
   $('#tabRow').innerHTML = TABS.map((t) => '<button class="tab ' + (tab === t.key ? 'on' : '') + '" data-tab="' + esc(t.key) + '" aria-label="' + t.label + '" aria-pressed="' + (tab === t.key) + '" title="' + t.label + ' · ' + currentPool(t.key).length + '">' + icons[t.icon] + '<span>' + t.label + '</span></button>').join('');
@@ -57,7 +58,7 @@ function renderSubs() {
   $('#subSelect').disabled = !counts.size;
 }
 function renderSorts() {
-  $('#sortRow').innerHTML = [['default', '最新'], ['hot', '最热'], ['star', '已收藏']].map(([key, label]) => '<button class="sort-button ' + (sort === key ? 'on' : '') + '" data-sort="' + key + '" aria-pressed="' + (sort === key) + '"' + (key === 'default' ? ' title="按表格添加时间，从新到旧"' : '') + '>' + label + '</button>').join('');
+  $('#sortRow').innerHTML = [['default', tab === 'skills' ? '名称' : '最新'], ['hot', '最热'], ['star', '已收藏']].map(([key, label]) => '<button class="sort-button ' + (sort === key ? 'on' : '') + '" data-sort="' + key + '" aria-pressed="' + (sort === key) + '"' + (key === 'default' && tab !== 'skills' ? ' title="按表格添加时间，从新到旧"' : '') + '>' + label + '</button>').join('');
 }
 function mediaHTML(p) {
   const hasImg = cfg.appearance?.cardImage !== false && p.image?.fileToken;
@@ -70,7 +71,8 @@ function mediaHTML(p) {
   return '<button class="media" aria-label="' + label + '" data-itoken="' + esc(hasImg ? p.image.fileToken : '') + '" ' + (image ? 'data-loaded="1"' : '') + '>' + (image || '<span class="ph">' + icons[hasVid ? 'video' : 'image'] + '</span>') + (hasVid ? '<span class="play">▶</span>' : '') + '</button>';
 }
 function cardHTML(p) {
-  return '<article class="card ' + (tab === 'phrase' ? 'phrase' : '') + (previewId === p.id ? ' previewing' : '') + '" data-id="' + esc(p.id) + '">' + mediaHTML(p) +
+  if (p.kind === 'skill') return '<article class="card skill-card' + (previewId === p.id ? ' previewing' : '') + '" data-id="' + esc(p.id) + '"><button class="skill-main" aria-label="查看技能：' + esc(p.title) + '"><strong>' + esc(p.title) + '</strong><span class="skill-summary">' + esc(p.note || p.description || '点击补充用途说明') + '</span><span class="skill-meta" title="' + esc(p.skillPath) + '">' + esc(p.sub) + ' · ' + (p.stale ? '暂无法读取' : '本机已发现') + ' · ' + esc(p.scanRoot.split(/[\\/]/).slice(-2).join('/')) + '</span></button><button class="bookmark ' + (p.pinned ? 'on' : '') + '" aria-label="' + (p.pinned ? '取消收藏' : '收藏') + '" aria-pressed="' + !!p.pinned + '">' + icons.star + '</button><button class="quick-copy" aria-label="复制调用提示词" title="复制调用提示词"' + (p.stale ? ' disabled' : '') + '>' + icons.copy + '</button></article>';
+  return '<article class="card ' + (previewId === p.id ? ' previewing' : '') + '" data-id="' + esc(p.id) + '">' + mediaHTML(p) +
     '<div class="card-bottom"><button class="card-title" title="点击复制：' + esc(p.title || p.name) + '">' + esc(p.title || p.name || '未命名提示词') + '</button>' +
     '<button class="bookmark ' + (p.pinned ? 'on' : '') + '" aria-label="' + (p.pinned ? '取消收藏' : '收藏') + '" aria-pressed="' + !!p.pinned + '" title="' + (p.pinned ? '取消收藏' : '收藏到常用词') + '">' + icons.star + '</button></div>' +
     '<button class="quick-copy" aria-label="复制提示词" title="复制全文 · 已复制 ' + (p.copyCount || 0) + ' 次">' + icons.copy + '</button></article>';
@@ -89,19 +91,20 @@ function appendChunk(first) {
 function renderList(resetScroll = true) {
   cancelPreviewHover();
   let items = currentPool().slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  if (tab === 'skills') items.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'));
   const q = query.trim().toLowerCase();
   if (sub) items = items.filter((p) => (p.sub || p.tags?.[0] || '未分类') === sub);
   if (sort === 'star') items = items.filter((p) => p.pinned);
   if (sort === 'hot' || tab === 'hot') items = items.slice().sort((a, b) => (b.copyCount || 0) - (a.copyCount || 0));
-  if (q) items = items.filter((p) => [p.title, p.name, p.content, ...(p.tags || [])].join(' ').toLowerCase().includes(q));
+  if (q) items = items.filter((p) => [p.title, p.name, p.content, p.description, p.note, ...(p.tags || [])].join(' ').toLowerCase().includes(q));
   const previous = $('#list').scrollTop;
   const visibleCount = renderState.rendered;
   renderState = { items, rendered: 0 };
   $('#resultCount').textContent = items.length + ' 条';
   if (!items.length) {
     mediaObserver?.disconnect();
-    const first = !view.prompts.length && !view.phrases.length && !meta.lastSyncAt;
-    $('#list').innerHTML = '<div class="empty">' + icons[query ? 'text' : 'image'] + '<strong>' + (first ? '你的灵感，从这里开始' : '没有找到相关内容') + '</strong>' + (first ? '连接飞书多维表，随时取用你的提示词。' : '试试其他关键词或分类。') +
+    const first = tab !== 'skills' && !view.prompts.length && !(view.skills || []).length && !meta.lastSyncAt;
+    $('#list').innerHTML = tab === 'skills' && !query && !sub && sort !== 'star' ? '<div class="empty">' + icons.skills + '<strong>' + (view.skillState?.scanning ? '正在发现本机 Skill…' : '暂未发现 Skill') + '</strong>可在设置的 Skill 页添加技能目录，再重新扫描。<div><button data-action="settings">设置扫描目录</button><button data-action="scan">重新扫描</button></div></div>' : '<div class="empty">' + icons[query ? 'text' : 'image'] + '<strong>' + (first ? '你的灵感，从这里开始' : '没有找到相关内容') + '</strong>' + (first ? '连接飞书多维表，随时取用你的提示词。' : '试试其他关键词或分类。') +
       (first ? '<div><button class="primary" data-action="settings">设置数据源</button><button data-action="sync">立即同步</button></div>' : '<div><button data-action="reset">清除筛选</button></div>') + '</div>';
   } else {
     appendChunk(true);
@@ -117,6 +120,16 @@ function renderList(resetScroll = true) {
   });
 }
 function renderFooter() {
+  if (tab === 'skills') {
+    const state = view.skillState || {};
+    $('#syncInfo').textContent = state.scanning ? '正在扫描本机 Skill…' : '本机 Skill · ' + (view.skills || []).length + ' 个' + (state.errors?.length ? ' · 部分未读取' : '');
+    $('#syncInfo').title = state.errors?.length ? state.errors.map(error => error.path + '：' + error.message).join('\n') : state.lastScanAt ? '最近扫描：' + new Date(state.lastScanAt).toLocaleString() : '添加目录后即可扫描';
+    $('.statusbar').classList.remove('unsynced'); $('.statusbar').classList.toggle('error', !!state.errors?.length); $('.statusbar').classList.toggle('syncing', !!state.scanning);
+    $('#btnSync').disabled = !!state.scanning; $('#btnSync').classList.toggle('spin', !!state.scanning);
+    $('#btnSync').title = '重新扫描 Skill'; $('#btnSync').setAttribute('aria-label', '重新扫描 Skill'); $('#btnSync').setAttribute('aria-busy', String(!!state.scanning));
+    return;
+  }
+  $('#btnSync').setAttribute('aria-label', '立即同步');
   $('#syncInfo').textContent = meta.syncing ? '正在同步…' : meta.lastSyncAt ? '已同步 · ' + view.prompts.length + ' 条' : '尚未同步';
   $('#syncInfo').title = meta.lastError || (meta.lastSyncAt ? '最近同步：' + new Date(meta.lastSyncAt).toLocaleString() : '点击右上角同步');
   $('.statusbar').classList.toggle('unsynced', !meta.lastSyncAt);
@@ -157,7 +170,7 @@ function markPreview(id) {
 }
 function cancelPreviewHover() { clearTimeout(hoverTimer); hoverTimer = null; hoverCard = null; }
 function queuePreview(card) {
-  if ($('#promptComposer').open || !expanded || !card?.isConnected) { cancelPreviewHover(); return; }
+  if ($('#promptComposer').open || !expanded || !card?.isConnected || (previewEditingId && previewEditingId !== card.dataset.id)) { cancelPreviewHover(); return; }
   if (hoverCard === card) return;
   cancelPreviewHover(); hoverCard = card;
   hoverTimer = setTimeout(() => {
@@ -165,14 +178,14 @@ function queuePreview(card) {
     if (hoverCard === card) showPreview(card);
   }, 320);
 }
-function showPreview(card, play = false) {
+function showPreview(card, play = false, focus = false) {
   clearTimeout(hoverTimer); cancelCollapse();
-  if ($('#promptComposer').open || !expanded || !card?.isConnected) return;
+  if ($('#promptComposer').open || !expanded || !card?.isConnected || (previewEditingId && previewEditingId !== card.dataset.id)) return;
   const item = findItem(card.dataset.id);
   if (!item) return;
   const request = ++previewRequest;
   markPreview(item.id);
-  window.api.showPreview({ id: item.id, kind: tab === 'phrase' ? 'phrase' : 'prompt', top: Math.round(card.getBoundingClientRect().top), play }).then((shown) => {
+  window.api.showPreview({ id: item.id, top: Math.round(card.getBoundingClientRect().top), play, focus }).then((shown) => {
     if (!shown && request === previewRequest) { markPreview(null); hoverCard = null; }
   }).catch(() => { if (request === previewRequest) { markPreview(null); hoverCard = null; showToast('预览暂时不可用'); } });
 }
@@ -192,7 +205,7 @@ function requestCollapse() { cancelCollapse(); hidePreview(); body.classList.add
 function cancelCollapse() { clearTimeout(collapseTimer); collapseTimer = null; }
 function scheduleCollapse() {
   cancelCollapse();
-  if (!expanded || sticky || dragging || $('#promptComposer').open) return;
+  if (!expanded || sticky || dragging || $('#promptComposer').open || previewEditingId) return;
   collapseTimer = setTimeout(() => {
     collapseTimer = null;
     if (!expanded || sticky || dragging) return;
@@ -251,8 +264,12 @@ function bindHandleDrag() {
   });
 }
 function selectTab(key) {
+  clearTimeout(searchTimer); query = $('#search').value;
   hidePreview(); tab = key; sub = ''; sort = 'default';
   renderTabs(); renderSubs(); renderSorts(); renderList();
+  $('#search').placeholder = key === 'skills' ? '搜索 Skill 名称、用途、分类' : '搜索提示词、风格、标签';
+  $('#search').setAttribute('aria-label', key === 'skills' ? '搜索 Skill' : '搜索提示词');
+  renderFooter();
 }
 
 function composerMessage(text, error = false) {
@@ -363,7 +380,7 @@ function bind() {
   $('#handle').addEventListener('mouseenter', (e) => { ctrlDown = !!e.ctrlKey; openFromHandle(); });
   $('#handle').addEventListener('mouseleave', () => { handleHover = false; suppressHandleUntilLeave = false; });
   window.api.on('panel:handle-enter', openFromHandle);
-  $('#btnSync').addEventListener('click', () => window.api.syncNow().then((r) => { if (r?.ok === false) showToast(r.error || '同步失败，请检查数据源'); }).catch(() => showToast('同步失败，请检查数据源')));
+  $('#btnSync').addEventListener('click', () => (tab === 'skills' ? window.api.scanSkills() : window.api.syncNow()).then((r) => { if (r?.ok === false) showToast(tab === 'skills' ? '部分 Skill 未读取，请在设置中查看' : r.error || '同步失败，请检查数据源'); }).catch(() => showToast(tab === 'skills' ? '扫描失败，请检查技能目录' : '同步失败，请检查数据源')));
   $('#btnPin').addEventListener('click', () => { window.api.requestExpand(!sticky); });
   $('#btnSettings').addEventListener('click', () => { hidePreview(); window.api.openSettings(); });
   $('#btnCollapse').addEventListener('click', requestCollapse);
@@ -398,8 +415,9 @@ function bind() {
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (action === 'settings') { window.api.openSettings(); return; }
     if (action === 'sync') { $('#btnSync').click(); return; }
+    if (action === 'scan') { window.api.scanSkills().catch(() => showToast('扫描失败，请重试')); return; }
     if (action === 'reset') {
-      clearTimeout(searchTimer); query = ''; $('#search').value = ''; selectTab('all'); return;
+      clearTimeout(searchTimer); query = ''; $('#search').value = ''; sub = ''; sort = 'default'; renderAll(); return;
     }
     const card = e.target.closest('.card');
     if (!card) return;
@@ -407,9 +425,13 @@ function bind() {
     if (!item) return;
     try {
       if (e.target.closest('.bookmark')) { await window.api.togglePin(item.id); return; }
+      if (item.kind === 'skill') {
+        if (e.target.closest('.quick-copy')) { await window.api.copySkill(item.id); return; }
+        showPreview(card, false, true); return;
+      }
       if (e.target.closest('.media')) { showPreview(card, !!item.video?.fileToken); return; }
       await window.api.copy(item.content, item.title || item.name, item.id);
-    } catch { showToast('操作失败，请重试'); }
+    } catch (error) { showToast(item.kind === 'skill' ? error.message : '操作失败，请重试'); }
   });
   document.addEventListener('keydown', (e) => {
     if ($('#promptComposer').open) return;
@@ -450,15 +472,16 @@ function bind() {
   });
   window.api.on('panel:handle-pos', (p) => { cfg.panel.handlePos = { ...cfg.panel.handlePos, [edgeKey()]: p.frac }; setHandleVisual(expanded ? 'pos' : 'fill'); });
   window.api.on('panel:layout', (p) => { applyPanelLayout(p); body.dataset.edge = p.edge; setHandleVisual(expanded ? 'pos' : 'fill'); });
-  window.api.on('panel:preview-active', cancelCollapse);
-  window.api.on('panel:preview-closed', () => { markPreview(null); hoverCard = null; });
+  window.api.on('panel:preview-active', (state) => { cancelCollapse(); if (state?.id) markPreview(state.id); });
+  window.api.on('panel:preview-editing', (state) => { previewEditingId = state?.active ? state.id : null; if (previewEditingId) cancelCollapse(); });
+  window.api.on('panel:preview-closed', () => { previewEditingId = null; markPreview(null); hoverCard = null; });
   window.api.on('panel:toast', (p) => showToast(p?.text));
   window.api.on('appearance:updated', async () => { cfg = await window.api.getConfig(); applyAppearance(); renderList(false); });
   window.api.on('data:updated', (p) => { view = p.view; meta = { ...meta, ...p.meta }; if (p.config) cfg = p.config; renderAll(); });
   window.api.on('stats:updated', (p) => {
-    for (const item of [...view.prompts, ...view.phrases]) if (item.id === p.id) item.copyCount = p.count;
+    for (const item of [...view.prompts, ...(view.skills || [])]) if (item.id === p.id) item.copyCount = p.count;
     const card = [...document.querySelectorAll('.card')].find((el) => el.dataset.id === p.id);
-    if (card) card.querySelector('.quick-copy').title = '复制全文 · 已复制 ' + p.count + ' 次';
+    if (card) card.querySelector('.quick-copy').title = (findItem(p.id)?.kind === 'skill' ? '复制调用词' : '复制全文') + ' · 已复制 ' + p.count + ' 次';
     renderTabs();
   });
   window.api.on('sync:state', (p) => { meta.syncing = !!p?.syncing; renderFooter(); });
@@ -470,7 +493,7 @@ function showToast(text) {
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     const d = await window.api.getData(); view = d.view; cfg = d.config; meta = d.meta;
-    tab = cfg.panel?.defaultTab === 'phrase' ? 'phrase' : 'all';
+    tab = cfg.panel?.defaultTab === 'skills' ? 'skills' : 'all';
     bind(); renderAll();
     const st = await window.api.getPanelState();
     applyPanelLayout(st?.layout);

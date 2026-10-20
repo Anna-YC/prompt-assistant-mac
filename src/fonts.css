@@ -1,0 +1,33 @@
+/* Original, unmodified Alibaba PuHuiTi 2.0 fonts, bundled for offline use. */
+@font-face {
+  font-family: "Alibaba PuHuiTi 2.0";
+  src: url("../assets/fonts/AlibabaPuHuiTi-2-55-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Alibaba PuHuiTi 2.0";
+  src: url("../assets/fonts/AlibabaPuHuiTi-2-65-Medium.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Alibaba PuHuiTi 2.0";
+  src: url("../assets/fonts/AlibabaPuHuiTi-2-75-SemiBold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Alibaba PuHuiTi 2.0";
+  src: url("../assets/fonts/AlibabaPuHuiTi-2-85-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+:root { --font-ui: "Alibaba PuHuiTi 2.0", "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif; }
+body { font-family: var(--font-ui); font-size-adjust: from-font; }
+button, input, textarea, select { font-family: inherit; }
+@supports not (font-size-adjust: from-font) { body { line-height: 1.5; } }

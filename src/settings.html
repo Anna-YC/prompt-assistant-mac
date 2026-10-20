@@ -3,7 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <title>提示词助手 · 设置</title>
+  <link rel="preload" href="../assets/fonts/AlibabaPuHuiTi-2-55-Regular.ttf" as="font" type="font/ttf" crossorigin />
+  <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="settings.css" />
+  <link rel="stylesheet" href="skills.css" />
 </head>
 <body>
   <aside class="side">
@@ -11,7 +14,7 @@
     <nav>
       <button class="nav on" data-tab="source"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg>数据源</button>
       <button class="nav" data-tab="prompt"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>提示词</button>
-      <button class="nav" data-tab="phrase"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 4V6a2 2 0 0 1 2-2Z M7 9h10M7 13h6"/></svg>常用句</button>
+      <button class="nav" data-tab="skills"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z M4 7.5l8 5 8-5M12 12.5V21"/></svg>Skill</button>
       <button class="nav" data-tab="look"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg>外观与行为</button>
       <button class="nav" data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 5M12 17h.01"/></svg>配置与使用</button>
     </nav>
@@ -59,13 +62,13 @@
       <div id="promptList" class="rows"></div>
     </section>
 
-    <!-- 常用句 -->
-    <section id="tab-phrase" class="tab">
-      <div class="toolbar">
-        <h2>常用句</h2>
-      </div>
-      <p class="hint">收藏的云端提示词会显示在这里，并出现在托盘快捷菜单中。旧条目可在侧栏「新建」中迁移到飞书。</p>
-      <div id="phraseList" class="rows"></div>
+    <section id="tab-skills" class="tab">
+      <div class="toolbar"><h2>Skill</h2><button id="btnScanSkills" class="btn primary">重新扫描</button><span id="skillScanInfo" class="msg" role="status"></span></div>
+      <p class="hint">发现本机技能，按用途分类和搜索。点击技能编辑分类与备注，收藏后可在侧栏「已收藏」和托盘中快速取用。</p>
+      <div class="skill-settings-card"><h3>扫描目录</h3><p class="hint">自动发现共享目录及 Codex、Claude、ZCode、WorkBuddy、Trae 等常见 Agent 的技能目录。项目、自定义或插件目录可手动添加。</p><div id="skillRoots"></div><div class="skill-root-actions"><button id="btnDiscoverSkillRoots" class="btn sm">自动发现目录</button><button id="btnAddSkillRoot" class="btn sm">添加目录</button></div><div id="skillScanErrors" class="hint"></div></div>
+      <div class="skill-settings-card"><h3>分类</h3><p class="hint">在技能详情中输入新分类即可创建；删除分类会将对应技能放回「未分类」。</p><div id="skillCategoryRows"></div></div>
+      <label for="skillSearch">搜索 Skill</label><input id="skillSearch" class="search" type="search" autocomplete="off" placeholder="名称、用途、分类或备注" />
+      <div id="skillList" class="rows skill-settings-list"></div>
     </section>
 
     <!-- 外观 -->
@@ -217,7 +220,7 @@
         <li><b>快速复制</b>：右键托盘图标 = 常用提示词菜单，点击即复制全文；</li>
         <li><b>浏览筛选</b>：两级分类——大类（常用词 / 生图词 / 视频词 / 高频）→ 细分（人物 / 环境 / …），顶部可搜索；</li>
         <li><b>卡片操作</b>：点卡片 = 复制提示词全文；点封面图 = 放大预览（无图卡片点 ✦ 占位图 = 预览全文，ESC 关闭）；点视频 ▶ = 内联播放；</li>
-        <li><b>★ 设为常用</b>：同步出现在面板常用句页与托盘右键菜单；</li>
+        <li><b>收藏</b>：在「已收藏」和托盘右键菜单快速取用提示词或 Skill；</li>
         <li><b>高频统计</b>：每次复制自动计数，「高频」分类按使用次数排序，方便复盘自己的常用库；</li>
         <li><b>添加提示词</b>：侧边栏顶部「新建」→ 填写标题和正文 →「保存到飞书」，也可按 Ctrl+Enter 保存。旧条目可在同一表单里迁移到云端。</li>
       </ul>
@@ -226,7 +229,7 @@
       <ul>
         <li><b>数据源</b>：多维表链接解析、选择同步哪些表、字段映射、自动同步间隔、立即同步、环境自检；</li>
         <li><b>提示词</b>：浏览已同步内容、设为常用 / 复制、查看复制统计；</li>
-        <li><b>常用句</b>：浏览收藏的提示词，管理待迁移的旧条目；</li>
+        <li><b>Skill</b>：扫描本机技能目录，设置分类、中文别名和用途备注，复制调用提示词；分类和收藏保存在本机；</li>
         <li><b>外观与行为</b>：主题与主题色、吸附边（右 / 顶）、面板宽度、预览行数、收回延时、
         媒体缓存位置与无痕模式、开机自启。</li>
       </ul>
@@ -287,6 +290,7 @@
     </div>
   </div>
 
+  <script src="skills-ui.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>
