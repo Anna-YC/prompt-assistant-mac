@@ -24,11 +24,12 @@ else if(args.includes('+record-batch-create')){const cells=payload().create_reco
 else if(args.includes('+record-delete')){
  const ids=payload().record_id_list;if(!args.includes('--yes'))throw Error('Missing explicit delete confirmation');
  if(state.mode==='offline'){fail('网络不可用，删除未完成');}
- else {state.records=state.records.filter(row=>!ids.includes(row.recordId)||(state.mode==='partial'&&row.cells.标题.includes('失败保留')));save();out({acknowledged:true});}
+ else {const before=state.records;state.deletes=(state.deletes||0)+1;state.records=state.records.filter(row=>!ids.includes(row.recordId)||(state.mode==='partial'&&row.cells.标题.includes('失败保留')));
+ if(state.mode==='stale'){state.staleRecords=before;state.lagReads=2;}save();out({record_id_list:ids.filter(id=>!state.records.some(row=>row.recordId===id))});}
 }else if(args.includes('+record-list')){
  if(state.mode==='offline')fail('网络不可用');
  else if(state.mode==='bad-page')out({fields:['标题','正文'],data:[],record_id_list:[],has_more:true});
- else {const data={fields:['标题','正文'],data:state.records.map(row=>[row.cells.标题,row.cells.正文]),record_id_list:state.records.map(row=>row.recordId),has_more:false};
+ else {const rows=state.lagReads>0?state.staleRecords:state.records;if(state.lagReads>0){state.lagReads--;save();}const data={fields:['标题','正文'],data:rows.map(row=>[row.cells.标题,row.cells.正文]),record_id_list:rows.map(row=>row.recordId),has_more:false};
   if(fs.existsSync(${JSON.stringify(delayFile)})){fs.unlinkSync(${JSON.stringify(delayFile)});fs.writeFileSync(${JSON.stringify(startedFile)},'1');const started=Date.now();const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(releaseFile)})){clearInterval(timer);out(data);}else if(Date.now()-started>12000){clearInterval(timer);fail('Fixture read timed out');}},15);}else out(data);
  }
 }else throw Error('Unexpected command');`);
@@ -68,12 +69,22 @@ else if(args.includes('+record-delete')){
     await panel.keyboard.press('Escape');
     assert(read().records.some(item => item.recordId === 'recA'));
     await panel.evaluate(() => window.api.requestPromptDeletion('common:recA'));
+    change(state => { state.mode = 'stale'; });
     await panel.locator('#promptDeleteConfirm').click();
     await panel.locator('#promptDeleteDialog').waitFor({ state: 'hidden' });
     assert(!read().records.some(item => item.recordId === 'recA'));
     assert(!fs.existsSync(read().lastTemp));
     assert(!(await panel.evaluate(() => window.api.getData())).view.prompts.some(item => item.id === 'common:recA'));
+    assert.equal(read().deletes, 1);
+    assert.equal(read().lagReads, 2, 'Acknowledged deletion must not depend on an immediate list read');
+    for (let count = 0; count < 2; count++) {
+      await panel.evaluate(() => window.api.syncNow());
+      assert(!(await panel.evaluate(() => window.api.getData())).view.prompts.some(item => item.id === 'common:recA'));
+      assert(Object.keys((await panel.evaluate(() => window.api.getConfig())).promptDeletions).length > 0);
+    }
+    change(state => { state.mode = 'normal'; });
     console.log('PASS: single delete from the side preview, explicit confirmation/cancel, matching remote deletion, and private temporary file cleanup.');
+    console.log('PASS: successful receipt closes the dialog on the first attempt; two stale subsequent syncs cannot revive the deleted row.');
 
     fs.writeFileSync(delayFile, '1');
     await panel.evaluate(() => { window.pendingSyncForDelete = window.api.syncNow(); });
